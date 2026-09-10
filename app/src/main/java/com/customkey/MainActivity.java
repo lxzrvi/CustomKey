@@ -38,8 +38,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Prefs.init(this);
-        ThemeManager.apply(this);
         super.onCreate(savedInstanceState);
+        ThemeManager.apply(this);
         setContentView(R.layout.activity_main);
 
         Ui.applyInsets(findViewById(R.id.root));

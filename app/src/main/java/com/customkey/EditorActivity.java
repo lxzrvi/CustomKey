@@ -51,8 +51,8 @@ public class EditorActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Prefs.init(this);
-        ThemeManager.apply(this);
         super.onCreate(savedInstanceState);
+        ThemeManager.apply(this);
         setContentView(R.layout.activity_editor);
 
         cfg = Prefs.get(this);
