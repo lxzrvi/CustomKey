@@ -5,194 +5,186 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
 
 import java.util.Locale;
 
-public class CustomKeyService
-        extends InputMethodService {
+/** The IME. All rendering and gesture handling lives in {@link KeyboardView}. */
+public class CustomKeyService extends InputMethodService {
 
-    private CustomKeyboardView keyboard;
+    private KeyboardView keyboard;
+
+    @Override
+    public void onCreate() {
+        Prefs.init(this);
+        super.onCreate();
+    }
 
     @Override
     public View onCreateInputView() {
+        Prefs.init(this);
 
-        keyboard =
-                new CustomKeyboardView(this);
+        keyboard = new KeyboardView(this);
+        keyboard.setMode(KeyboardView.MODE_LIVE);
+        keyboard.setListener(new KeyboardView.Adapter() {
+            @Override
+            public void onKeyPress(KeyModel key) {
+                handleKey(key);
+            }
 
-        keyboard.setListener(
-                this::handleKey
-        );
-
+            @Override
+            public void onImeSwitchRequested() {
+                switchKeyboard();
+            }
+        });
         return keyboard;
     }
 
     @Override
-    public void onStartInputView(
-            EditorInfo info,
-            boolean restarting
-    ) {
-        super.onStartInputView(
-                info,
-                restarting
-        );
-
+    public void onStartInputView(EditorInfo info, boolean restarting) {
+        super.onStartInputView(info, restarting);
         if (keyboard != null) {
-            keyboard.reloadSettings();
+            keyboard.reload();
         }
     }
 
+    @Override
+    public void onFinishInputView(boolean finishingInput) {
+        super.onFinishInputView(finishingInput);
+        if (keyboard != null) {
+            keyboard.clearShift();
+        }
+        KeyPopup.hide();
+    }
+
+    @Override
+    public void onDestroy() {
+        KeyPopup.hide();
+        super.onDestroy();
+    }
+
+    /* ================================================================== */
+
     private void handleKey(KeyModel key) {
-
-        InputConnection input =
-                getCurrentInputConnection();
-
+        InputConnection input = getCurrentInputConnection();
         if (input == null) {
             return;
         }
 
         switch (key.type) {
 
-            case KeyModel.TEXT:
-
-                String output = key.output;
-
-                if (keyboard.isShifted()) {
-                    output =
-                            output.toUpperCase(
-                                    Locale.getDefault()
-                            );
+            case KeyModel.TEXT: {
+                String output = key.output == null ? key.label : key.output;
+                if (output == null) {
+                    return;
                 }
-
+                if (keyboard != null && keyboard.isShifted()) {
+                    output = output.toUpperCase(Locale.ROOT);
+                }
                 input.commitText(output, 1);
-
-                if (keyboard.isShifted()) {
-                    keyboard.clearShift();
-                }
-
                 break;
-
+            }
 
             case KeyModel.SPACE:
-
                 input.commitText(" ", 1);
                 break;
 
-
             case KeyModel.BACKSPACE:
-
-                input.deleteSurroundingText(
-                        1,
-                        0
-                );
-
+                deleteBack(input);
                 break;
-
 
             case KeyModel.ENTER:
-
-                input.sendKeyEvent(
-                        new KeyEvent(
-                                KeyEvent.ACTION_DOWN,
-                                KeyEvent.KEYCODE_ENTER
-                        )
-                );
-
-                input.sendKeyEvent(
-                        new KeyEvent(
-                                KeyEvent.ACTION_UP,
-                                KeyEvent.KEYCODE_ENTER
-                        )
-                );
-
+                sendEnter(input);
                 break;
-
-
-            case KeyModel.SHIFT:
-
-                keyboard.toggleShift();
-                break;
-
-
-            case KeyModel.SYMBOLS:
-
-                keyboard.toggleSymbols();
-                break;
-
 
             case KeyModel.CURSOR_LEFT:
-
-                sendArrow(
-                        input,
-                        KeyEvent.KEYCODE_DPAD_LEFT
-                );
-
+                sendKey(input, KeyEvent.KEYCODE_DPAD_LEFT);
                 break;
-
 
             case KeyModel.CURSOR_RIGHT:
-
-                sendArrow(
-                        input,
-                        KeyEvent.KEYCODE_DPAD_RIGHT
-                );
-
+                sendKey(input, KeyEvent.KEYCODE_DPAD_RIGHT);
                 break;
-
 
             case KeyModel.SELECT_ALL:
-
-                input.performContextMenuAction(
-                        android.R.id.selectAll
-                );
-
+                input.performContextMenuAction(android.R.id.selectAll);
                 break;
-
 
             case KeyModel.COPY:
-
-                input.performContextMenuAction(
-                        android.R.id.copy
-                );
-
+                input.performContextMenuAction(android.R.id.copy);
                 break;
-
 
             case KeyModel.CUT:
-
-                input.performContextMenuAction(
-                        android.R.id.cut
-                );
-
+                input.performContextMenuAction(android.R.id.cut);
                 break;
 
-
             case KeyModel.PASTE:
+                input.performContextMenuAction(android.R.id.paste);
+                break;
 
-                input.performContextMenuAction(
-                        android.R.id.paste
-                );
+            case KeyModel.HIDE:
+                requestHideSelf(0);
+                break;
 
+            default:
                 break;
         }
     }
 
-    private void sendArrow(
-            InputConnection input,
-            int keyCode
-    ) {
+    /** Deletes a whole code point, so emoji do not get chopped in half. */
+    private void deleteBack(InputConnection input) {
+        CharSequence before = input.getTextBeforeCursor(2, 0);
+        if (before == null || before.length() == 0) {
+            sendKey(input, KeyEvent.KEYCODE_DEL);
+            return;
+        }
+        try {
+            input.deleteSurroundingTextInCodePoints(1, 0);
+        } catch (Throwable t) {
+            input.deleteSurroundingText(1, 0);
+        }
+    }
 
-        input.sendKeyEvent(
-                new KeyEvent(
-                        KeyEvent.ACTION_DOWN,
-                        keyCode
-                )
-        );
+    /** Honours the field's action (Search / Go / Done / Next) when it has one. */
+    private void sendEnter(InputConnection input) {
+        EditorInfo info = getCurrentInputEditorInfo();
+        if (info != null) {
+            int action = info.imeOptions & EditorInfo.IME_MASK_ACTION;
+            if (action != EditorInfo.IME_ACTION_UNSPECIFIED
+                    && action != EditorInfo.IME_ACTION_NONE
+                    && input.performEditorAction(action)) {
+                return;
+            }
+            if ((info.imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) == 0
+                    && (info.inputType & EditorInfo.TYPE_MASK_CLASS)
+                    == EditorInfo.TYPE_CLASS_TEXT
+                    && (info.inputType & EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE) == 0) {
+                sendKey(input, KeyEvent.KEYCODE_ENTER);
+                return;
+            }
+        }
+        sendKey(input, KeyEvent.KEYCODE_ENTER);
+    }
 
-        input.sendKeyEvent(
-                new KeyEvent(
-                        KeyEvent.ACTION_UP,
-                        keyCode
-                )
-        );
+    private void sendKey(InputConnection input, int keyCode) {
+        long now = android.os.SystemClock.uptimeMillis();
+        input.sendKeyEvent(new KeyEvent(now, now,
+                KeyEvent.ACTION_DOWN, keyCode, 0));
+        input.sendKeyEvent(new KeyEvent(now, now,
+                KeyEvent.ACTION_UP, keyCode, 0));
+    }
+
+    private void switchKeyboard() {
+        try {
+            if (shouldOfferSwitchingToNextInputMethod()) {
+                switchToNextInputMethod(false);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        InputMethodManager manager = (InputMethodManager)
+                getSystemService(INPUT_METHOD_SERVICE);
+        if (manager != null) {
+            manager.showInputMethodPicker();
+        }
     }
 }

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Night qualifier only remaps the *system* choice. Light / Dark stay explicit. -->
+    <style name="Theme.CustomKey" parent="Theme.CustomKey.Dark" />
+
+</resources>

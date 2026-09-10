@@ -1,16 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style
-        name="Theme.CustomKey"
-        parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- ============ Base palettes (never qualified) ============ -->
+    <style name="CkBase.Light" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="ckSurface">@color/paper_bg</item>
+        <item name="ckCard">@color/paper_card</item>
+        <item name="ckTextPrimary">@color/paper_text</item>
+        <item name="ckTextSecondary">@color/paper_text2</item>
+        <item name="ckBorder">@color/paper_border</item>
+        <item name="ckAccent">@color/black</item>
+        <item name="ckOnAccent">@color/white</item>
+        <item name="ckTrack">@color/paper_track</item>
 
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/accent</item>
-        <item name="android:statusBarColor">@color/white</item>
-        <item name="android:navigationBarColor">@color/black</item>
+        <item name="android:windowBackground">@color/paper_bg</item>
+        <item name="android:statusBarColor">@color/paper_bg</item>
+        <item name="android:navigationBarColor">@color/paper_bg</item>
         <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">@color/black</item>
+        <item name="android:colorControlActivated">@color/black</item>
+        <item name="android:textColorPrimary">@color/paper_text</item>
+        <item name="android:textColorSecondary">@color/paper_text2</item>
+        <item name="android:alertDialogTheme">@style/Theme.CustomKey.Dialog.Light</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
 
+    <style name="CkBase.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="ckSurface">@color/ink_bg</item>
+        <item name="ckCard">@color/ink_card</item>
+        <item name="ckTextPrimary">@color/ink_text</item>
+        <item name="ckTextSecondary">@color/ink_text2</item>
+        <item name="ckBorder">@color/ink_border</item>
+        <item name="ckAccent">@color/white</item>
+        <item name="ckOnAccent">@color/black</item>
+        <item name="ckTrack">@color/ink_track</item>
+
+        <item name="android:windowBackground">@color/ink_bg</item>
+        <item name="android:statusBarColor">@color/ink_bg</item>
+        <item name="android:navigationBarColor">@color/ink_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">@color/white</item>
+        <item name="android:colorControlActivated">@color/white</item>
+        <item name="android:textColorPrimary">@color/ink_text</item>
+        <item name="android:textColorSecondary">@color/ink_text2</item>
+        <item name="android:alertDialogTheme">@style/Theme.CustomKey.Dialog.Dark</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- ============ Public themes ============ -->
+    <style name="Theme.CustomKey.Light" parent="CkBase.Light" />
+
+    <style name="Theme.CustomKey.Dark" parent="CkBase.Dark" />
+
+    <!-- "System": remapped to Dark by values-night -->
+    <style name="Theme.CustomKey" parent="Theme.CustomKey.Light" />
+
+    <!-- Applied to the IME window; mirrors the app theme choice -->
+    <style name="Theme.CustomKey.Ime" parent="CkBase.Dark" />
+
+    <!-- ============ Dialogs ============ -->
+    <style name="Theme.CustomKey.Dialog.Light" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">@color/black</item>
+        <item name="android:colorBackground">@color/paper_card</item>
+        <item name="android:textColorPrimary">@color/paper_text</item>
+        <item name="android:textColorSecondary">@color/paper_text2</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="Theme.CustomKey.Dialog.Dark" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/white</item>
+        <item name="android:colorBackground">@color/ink_card</item>
+        <item name="android:textColorPrimary">@color/ink_text</item>
+        <item name="android:textColorSecondary">@color/ink_text2</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- ============ Text ============ -->
+    <style name="CkTitle">
+        <item name="android:textColor">?attr/ckTextPrimary</item>
+        <item name="android:fontFamily">cursive</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">36sp</item>
+    </style>
+
+    <style name="CkH1">
+        <item name="android:textColor">?attr/ckTextPrimary</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="CkH2">
+        <item name="android:textColor">?attr/ckTextSecondary</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:letterSpacing">0.1</item>
+        <item name="android:textAllCaps">true</item>
+    </style>
+
+    <style name="CkBody">
+        <item name="android:textColor">?attr/ckTextSecondary</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- ============ Widgets ============ -->
+    <style name="CkBtn" parent="android:Widget.Material.Button.Borderless">
+        <item name="android:textColor">?attr/ckTextPrimary</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:background">@drawable/bg_ghost_btn</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+    </style>
+
+    <style name="CkBtnSolid" parent="CkBtn">
+        <item name="android:textColor">?attr/ckOnAccent</item>
+        <item name="android:background">@drawable/bg_solid_btn</item>
     </style>
 
 </resources>

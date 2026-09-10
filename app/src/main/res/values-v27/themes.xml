@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.CustomKey.Light" parent="CkBase.Light">
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <style name="Theme.CustomKey.Dark" parent="CkBase.Dark">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+</resources>

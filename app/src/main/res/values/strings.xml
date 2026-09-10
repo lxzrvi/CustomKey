@@ -2,6 +2,54 @@
 <resources>
 
     <string name="app_name">CustomKey</string>
-    <string name="english_keyboard">CustomKey English</string>
+    <string name="english_keyboard">CustomKey</string>
+    <string name="tagline">Build your keyboard, your way.</string>
+    <string name="editor_title">Keyboard editor</string>
+
+    <!-- Hub -->
+    <string name="hub_permissions">Permissions</string>
+    <string name="hub_permissions_sub">A keyboard needs these before it can type anywhere.</string>
+    <string name="perm_enable">Enable CustomKey</string>
+    <string name="perm_select">Set as active keyboard</string>
+    <string name="perm_notifications">Notifications</string>
+    <string name="status_done">Done</string>
+    <string name="status_pending">Pending</string>
+    <string name="status_optional">Optional</string>
+    <string name="trial_title">Try it here</string>
+    <string name="trial_hint">Tap this field and type with CustomKey…</string>
+
+    <string name="menu_edit">Keyboard editor</string>
+    <string name="menu_edit_sub">Preview, colours, keys, layout</string>
+    <string name="menu_language">Language</string>
+    <string name="menu_language_sub">Coming later</string>
+    <string name="menu_backup">Export backup</string>
+    <string name="menu_backup_sub">Save or restore your keyboard</string>
+    <string name="menu_share">Share app</string>
+    <string name="menu_share_sub">Send CustomKey to a friend</string>
+    <string name="menu_theme">Theme</string>
+    <string name="menu_theme_sub">System, light or dark</string>
+    <string name="menu_exit">Exit</string>
+    <string name="menu_exit_sub">Close CustomKey</string>
+
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
+    <!-- Editor -->
+    <string name="ed_preview">Live preview</string>
+    <string name="ed_select">Select</string>
+    <string name="ed_reset">Reset</string>
+    <string name="ed_background">Background</string>
+    <string name="ed_rows">Rows &amp; layout</string>
+    <string name="ed_keys">Keys</string>
+    <string name="ed_font">Font</string>
+    <string name="ed_press">Long press &amp; popup</string>
+    <string name="ed_sound">Sound &amp; vibration</string>
+    <string name="ed_selected">Selected keys</string>
+
+    <string name="act_edit">Edit</string>
+    <string name="act_move">Move</string>
+    <string name="act_cancel">Cancel</string>
+    <string name="coming_later">Coming later</string>
 
 </resources>

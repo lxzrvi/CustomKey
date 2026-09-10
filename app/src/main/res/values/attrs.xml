@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <attr name="ckSurface" format="color" />
+    <attr name="ckCard" format="color" />
+    <attr name="ckTextPrimary" format="color" />
+    <attr name="ckTextSecondary" format="color" />
+    <attr name="ckBorder" format="color" />
+    <attr name="ckAccent" format="color" />
+    <attr name="ckOnAccent" format="color" />
+    <attr name="ckTrack" format="color" />
+
+</resources>
