@@ -15,6 +15,7 @@
     <string name="status_done">Done</string>
     <string name="status_pending">Pending</string>
     <string name="status_optional">Optional</string>
+    <string name="status_unknown">Tap to choose</string>
     <string name="trial_title">Try it here</string>
     <string name="trial_hint">Tap this field and type with CustomKey…</string>
 

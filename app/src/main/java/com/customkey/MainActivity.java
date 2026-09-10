@@ -15,6 +15,7 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -255,47 +256,80 @@ public class MainActivity extends Activity {
      * Actions
      * ================================================================== */
 
+    /**
+     * Wrapped end to end: Android 14+ throws SecurityException for some
+     * Settings.Secure keys, and a status line must never take the app down.
+     */
     private void refreshStatuses() {
-        if (enableRow != null) {
-            boolean enabled = isImeEnabled();
-            enableRow.sub.setText(enabled
-                    ? getString(R.string.status_done)
-                    : getString(R.string.status_pending));
-            enableRow.root.setAlpha(enabled ? 0.55f : 1f);
-        }
-        if (selectRow != null) {
-            boolean active = isImeActive();
-            selectRow.sub.setText(active
-                    ? getString(R.string.status_done)
-                    : getString(R.string.status_pending));
-            selectRow.root.setAlpha(active ? 0.55f : 1f);
-        }
-        if (notifyRow != null && Build.VERSION.SDK_INT >= 33) {
-            boolean on = areNotificationsEnabled();
-            notifyRow.sub.setText(on
-                    ? getString(R.string.status_done)
-                    : getString(R.string.status_optional));
-        }
-        if (themeBadge != null) {
-            themeBadge.setText(ThemeManager.label(Prefs.get(this).theme));
+        try {
+            if (enableRow != null) {
+                boolean enabled = isImeEnabled();
+                enableRow.sub.setText(enabled
+                        ? getString(R.string.status_done)
+                        : getString(R.string.status_pending));
+                enableRow.root.setAlpha(enabled ? 0.55f : 1f);
+            }
+            if (selectRow != null) {
+                Boolean active = isImeActive();
+                selectRow.sub.setText(active == null
+                        ? getString(R.string.status_unknown)
+                        : active
+                        ? getString(R.string.status_done)
+                        : getString(R.string.status_pending));
+                selectRow.root.setAlpha(
+                        Boolean.TRUE.equals(active) ? 0.55f : 1f);
+            }
+            if (notifyRow != null && Build.VERSION.SDK_INT >= 33) {
+                boolean on = areNotificationsEnabled();
+                notifyRow.sub.setText(on
+                        ? getString(R.string.status_done)
+                        : getString(R.string.status_optional));
+            }
+            if (themeBadge != null) {
+                themeBadge.setText(ThemeManager.label(Prefs.get(this).theme));
+            }
+        } catch (Throwable ignored) {
         }
     }
 
+    /**
+     * Settings.Secure.ENABLED_INPUT_METHODS is unreadable for apps targeting
+     * API 34+, so use the sanctioned InputMethodManager API instead.
+     */
     private boolean isImeEnabled() {
-        String enabled = Settings.Secure.getString(
-                getContentResolver(), Settings.Secure.ENABLED_INPUT_METHODS);
-        return enabled != null && enabled.contains(getPackageName() + "/");
+        try {
+            InputMethodManager manager = (InputMethodManager)
+                    getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager == null) {
+                return false;
+            }
+            for (InputMethodInfo info : manager.getEnabledInputMethodList()) {
+                if (getPackageName().equals(info.getPackageName())) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
-    private boolean isImeActive() {
-        String current = Settings.Secure.getString(
-                getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
-        if (current == null) {
-            return false;
+    /** @return TRUE / FALSE, or null when the OS refuses to tell us. */
+    private Boolean isImeActive() {
+        try {
+            String current = Settings.Secure.getString(
+                    getContentResolver(), Settings.Secure.DEFAULT_INPUT_METHOD);
+            if (current == null) {
+                return null;
+            }
+            ComponentName name = ComponentName.unflattenFromString(current);
+            if (name == null) {
+                return null;
+            }
+            return getPackageName().equals(name.getPackageName())
+                    && CustomKeyService.class.getName().equals(name.getClassName());
+        } catch (Throwable ignored) {
+            return null;
         }
-        ComponentName name = ComponentName.unflattenFromString(current);
-        return name != null && getPackageName().equals(name.getPackageName())
-                && CustomKeyService.class.getName().equals(name.getClassName());
     }
 
     private boolean areNotificationsEnabled() {
