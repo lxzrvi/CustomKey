@@ -4,6 +4,7 @@ import android.inputmethodservice.InputMethodService
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
@@ -20,9 +21,30 @@ class CustomKeyService : InputMethodService() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.DKGRAY)
-
-            // Keep current working behavior
             setPadding(dp(3), dp(5), dp(3), 0)
+        }
+
+        // Handle bottom system bar inset
+        root.setOnApplyWindowInsetsListener { view, insets ->
+
+            val bottomInset =
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    insets.getInsets(
+                        WindowInsets.Type.navigationBars()
+                    ).bottom
+                } else {
+                    @Suppress("DEPRECATION")
+                    insets.systemWindowInsetBottom
+                }
+
+            view.setPadding(
+                dp(3),
+                dp(5),
+                dp(3),
+                bottomInset
+            )
+
+            insets
         }
 
         showLetters()
@@ -80,10 +102,11 @@ class CustomKeyService : InputMethodService() {
         letters.forEach { char ->
 
             val label =
-                if (shift)
+                if (shift) {
                     char.uppercaseChar().toString()
-                else
+                } else {
                     char.toString()
+                }
 
             row.addView(
                 createKey(label, 1f) {
@@ -151,10 +174,10 @@ class CustomKeyService : InputMethodService() {
             "?", "/", "\\"
         )
 
-        symbolsList.forEach {
+        symbolsList.forEach { symbol ->
             thirdRow.addView(
-                createKey(it, 1f) {
-                    typeText(it)
+                createKey(symbol, 1f) {
+                    typeText(symbol)
                 }
             )
         }
@@ -224,14 +247,14 @@ class CustomKeyService : InputMethodService() {
     private fun typeLetter(char: Char) {
 
         val value =
-            if (shift)
+            if (shift) {
                 char.uppercaseChar().toString()
-            else
+            } else {
                 char.toString()
+            }
 
         currentInputConnection?.commitText(value, 1)
 
-        // Shift applies only to one letter
         if (shift) {
             shift = false
             showLetters()
@@ -243,15 +266,16 @@ class CustomKeyService : InputMethodService() {
     }
 
     private fun delete() {
-        currentInputConnection
-            ?.deleteSurroundingText(1, 0)
+        currentInputConnection?.deleteSurroundingText(1, 0)
     }
 
     private fun performEnter() {
 
         val info = currentInputEditorInfo
 
-        when (info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)) {
+        when (
+            info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+        ) {
 
             EditorInfo.IME_ACTION_DONE,
             EditorInfo.IME_ACTION_GO,
@@ -259,16 +283,13 @@ class CustomKeyService : InputMethodService() {
             EditorInfo.IME_ACTION_SEARCH,
             EditorInfo.IME_ACTION_SEND -> {
 
-                currentInputConnection
-                    ?.performEditorAction(
-                        info.imeOptions and
-                            EditorInfo.IME_MASK_ACTION
-                    )
+                currentInputConnection?.performEditorAction(
+                    info.imeOptions and EditorInfo.IME_MASK_ACTION
+                )
             }
 
             else -> {
-                currentInputConnection
-                    ?.commitText("\n", 1)
+                currentInputConnection?.commitText("\n", 1)
             }
         }
     }
@@ -299,19 +320,18 @@ class CustomKeyService : InputMethodService() {
 
             setPadding(0, 0, 0, 0)
 
-            layoutParams =
-                LinearLayout.LayoutParams(
-                    0,
-                    dp(52),
-                    weight
-                ).apply {
-                    setMargins(
-                        dp(2),
-                        dp(2),
-                        dp(2),
-                        dp(2)
-                    )
-                }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                dp(48),
+                weight
+            ).apply {
+                setMargins(
+                    dp(2),
+                    dp(2),
+                    dp(2),
+                    dp(2)
+                )
+            }
 
             setOnClickListener {
                 action()
@@ -320,10 +340,8 @@ class CustomKeyService : InputMethodService() {
     }
 
     private fun dp(value: Int): Int {
-
         return (
-            value *
-                resources.displayMetrics.density
-            ).toInt()
+            value * resources.displayMetrics.density
+        ).toInt()
     }
 }
