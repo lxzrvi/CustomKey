@@ -2,6 +2,9 @@ name: Build CustomKey
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    tags: [ "v*" ]
 
 jobs:
   build:
@@ -22,11 +25,24 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Build Debug APK
-        run: gradle :app:assembleDebug
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Build signed release APK
+        env:
+          CK_STORE_PASSWORD: customkey
+          CK_KEY_ALIAS: customkey
+          CK_KEY_PASSWORD: customkey
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: CustomKey-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CustomKey-release
+          path: app/build/outputs/apk/release/app-release.apk

@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+build/
+/local.properties
+.idea/
+.DS_Store
+captures/
+.cxx/
+.kotlin/
+
+# NOTE: release.keystore is intentionally committed — it is a public demo
+# signing key so CI can produce installable signed APKs out of the box.
+# Generate your own keystore before publishing to a store.
