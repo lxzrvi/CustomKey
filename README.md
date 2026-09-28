@@ -8,31 +8,38 @@ zero dependencies, zero analytics, 100% programmatic UI (no XML layouts, no AppC
 ## Features
 
 ### Keyboard
-- Modern rounded-key design that follows the system **Light/Dark theme** automatically
-- Always sits **above the Android navigation bar** — the bar (hide-arrow / keyboard
-  switcher) stays system-controlled, on both **gesture** and **3-button** navigation
-- **Shift** with active state, **double-tap for Caps Lock**, and **auto-capitalization**
-  at sentence starts and in name/all-caps fields
+- Premium neutral-grey design that follows the system **Light/Dark theme**
+- Always stays **above the system navigation bar** (hide-arrow / keyboard-switcher bar)
+  on both **gesture** and **3-button** navigation — edge-to-edge insets are handled on
+  the IME window itself, plus an optional manual "extra bottom padding"
+- **Shift** with active state, **double-tap → Caps Lock**, **auto-capitalization**
 - **Hold backspace** to continuously delete
 - Context-aware **Enter key**: ↵ / Done / Go / Search / Send / Next / Prev
-- Dedicated **number & symbol page** (`?123`) plus an **extra symbols page** (`=\<`)
-- **Long-press keys** for accents, digits and punctuation (a → à á â ä ã å, . → ! ? : ; …)
-- Key-press **preview popups** and press animation
+- **Number & symbol page** (`?123`) + **extra symbols page** (`=\<`)
+- **Full Android emoji page** (all categories + recents) via the 😀 key
+- **Long-press keys** for accents, digits and punctuation (a → à á â ä ã å …)
+- Key-press **preview popups** that appear **above the keyboard**, press animation
+- **Per-key colors**, custom key width, keyboard background image, transparency
 
 ### Feedback settings (persisted on-device)
-- Key sound on/off with **volume control**
-- Vibration on/off with **strength control**
+- Key sound with **5 premium synthesized sounds** (Tap · Pop · Click · Wood · Bubble)
+  and volume control
+- Vibration with strength control
 
 ### Keyboard Editor
-Edit the whole letters layout from the app — no recompile needed:
-- Add / edit / remove **custom keys** (any text, email, snippet…)
-- Change **key width**, **keyboard height** and **key spacing**
-- Add / remove rows
+- **Sticky exact live preview** at the top — it never scrolls away and updates instantly
+- Add / edit / remove **custom keys** (any text, emoji, snippet…)
+- **Batch (bunch) editing** — long-press keys to select many, then change width or delete
+- **Move keys** left / right / up / down
+- Per-key **color**, **width**, and **long-press action** (repeat · type a shortcut)
+- Full **Android emoji picker** with recents
+- **Key height**, **key spacing**, **keyboard transparency**, **extra bottom padding**
+- **Keyboard background image** from your gallery
 - Save instantly, or **reset to default**
 
 ### Setup
 - Auto-detects whether CustomKey is **enabled** and currently **selected**
-- Shows only the pending step, and a green “active” card when you're done
+- Shows only the pending step, and a green "active" card when you're done
 
 ### Privacy
 - **No internet permission. No analytics. No tracking.** Nothing you type ever leaves your device.
@@ -72,7 +79,8 @@ CI secrets. **Keep your real keystore + passwords private.**
 
 ## Tech notes
 - Kotlin, `InputMethodService`, no external libraries at all
-- Every screen and every key is drawn programmatically
+- Every screen, key, toggle and slider is drawn programmatically (iOS-style widgets)
+- Key sounds are synthesized WAVs; emoji set is embedded in code
 - Layouts are shared between the editor and the IME as JSON (`org.json`)
 
 ---

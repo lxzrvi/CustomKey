@@ -3,42 +3,48 @@ package com.customkey.app
 import android.app.Dialog
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RoundedBitmapDrawableFactory
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.Window
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.SeekBar
-import android.widget.Switch
 import android.widget.TextView
 
 /**
- * Small programmatic-UI toolkit shared by all screens.
- * The whole app is built without XML layouts, AppCompat or any library —
- * this keeps every screen consistent and automatically dark-mode aware.
+ * Small programmatic-UI toolkit shared by all screens — premium neutral-grey
+ * light/dark theme with minimal iOS-style buttons, toggles and sliders.
+ * The whole app is built without XML layouts, AppCompat or any library.
  */
 object Ui {
 
     class Palette(val dark: Boolean) {
-        val bg: Int = if (dark) Color.rgb(18, 18, 18) else Color.rgb(250, 250, 250)
-        val card: Int = if (dark) Color.rgb(32, 32, 36) else Color.rgb(238, 238, 241)
-        val inputBg: Int = if (dark) Color.rgb(45, 45, 50) else Color.WHITE
-        val text: Int = if (dark) Color.WHITE else Color.rgb(20, 20, 20)
-        val secondary: Int = if (dark) Color.rgb(168, 170, 176) else Color.rgb(98, 100, 106)
-        val accent: Int = Color.rgb(26, 115, 232)
+        // Neutral premium greys — no blue tint.
+        val bg: Int = if (dark) 0xFF141414.toInt() else 0xFFF5F5F5.toInt()
+        val card: Int = if (dark) 0xFF1F1F1F.toInt() else Color.WHITE
+        val inputBg: Int = if (dark) 0xFF2A2A2A.toInt() else 0xFFEFEFEF.toInt()
+        val text: Int = if (dark) 0xFFF5F5F5.toInt() else 0xFF111111.toInt()
+        val secondary: Int = if (dark) 0xFF9C9C9C.toInt() else 0xFF8A8A8A.toInt()
+        val hairline: Int = if (dark) 0xFF333333.toInt() else 0xFFE6E6E6.toInt()
+        val tinted: Int = if (dark) 0xFF2C2C2E.toInt() else 0xFFE9E9E9.toInt()
+        val accent: Int = 0xFF0A84FF.toInt()
         val accentText: Int = Color.WHITE
-        val good: Int = Color.rgb(52, 168, 83)
-        val danger: Int = Color.rgb(220, 88, 60)
-        val stroke: Int = if (dark) Color.rgb(58, 58, 64) else Color.rgb(220, 221, 225)
-        val chipSystem: Int = if (dark) Color.rgb(52, 52, 58) else Color.rgb(210, 213, 218)
-        val chipCustom: Int = if (dark) Color.rgb(38, 50, 74) else Color.rgb(222, 233, 251)
+        val good: Int = 0xFF30D158.toInt()
+        val danger: Int = 0xFFFF453A.toInt()
+        val chipSystem: Int = if (dark) 0xFF3A3A3C.toInt() else 0xFFDEDEDE.toInt()
+        val chipCustom: Int = if (dark) 0xFF1E3A5F.toInt() else 0xFFDDEBFF.toInt()
+        val switchOn: Int = 0xFF34C759.toInt()
     }
 
     fun palette(context: Context): Palette = Palette(isDark(context))
@@ -65,13 +71,36 @@ object Ui {
         return drawable
     }
 
+    /** Rounded version of any drawable resource (e.g. the app logo). */
+    fun roundedBitmap(context: Context, resId: Int, radiusDp: Int): Drawable {
+        val bitmap = BitmapFactory.decodeResource(context.resources, resId)
+        val drawable = RoundedBitmapDrawableFactory.create(context.resources, bitmap)
+        drawable.cornerRadius = dp(context, radiusDp).toFloat()
+        return drawable
+    }
+
+    /** Keeps activity content above the system navigation bar (edge-to-edge safe). */
+    fun applyNavBarInsetPadding(view: View) {
+        val baseBottom = view.paddingBottom
+        view.setOnApplyWindowInsetsListener { v, insets ->
+            val bottom = if (Build.VERSION.SDK_INT >= 30) {
+                insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetBottom
+            }
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, baseBottom + bottom)
+            insets
+        }
+    }
+
     fun heading(context: Context, p: Palette, parent: LinearLayout, title: String): TextView {
         val tv = TextView(context).apply {
             text = title
             textSize = 13f
             letterSpacing = 0.08f
             setTextColor(p.secondary)
-            setPadding(0, dp(context, 26), 0, dp(context, 10))
+            setPadding(dp(context, 4), dp(context, 26), dp(context, 4), dp(context, 10))
         }
         parent.addView(tv)
         return tv
@@ -81,7 +110,7 @@ object Ui {
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 8))
-            background = rounded(context, p.card, 18)
+            background = rounded(context, p.card, 16)
         }
 
     fun addCard(context: Context, p: Palette, parent: LinearLayout): LinearLayout {
@@ -96,6 +125,7 @@ object Ui {
         return card
     }
 
+    /** iOS-style button: filled (accent) or tinted (grey fill). */
     fun button(
         context: Context,
         p: Palette,
@@ -115,10 +145,10 @@ object Ui {
             stateListAnimator = null
             setOnClickListener { onClick() }
             if (filled) {
-                background = rounded(context, p.accent, 14)
+                background = rounded(context, p.accent, 12)
                 setTextColor(p.accentText)
             } else {
-                background = rounded(context, p.card, 14, p.stroke)
+                background = rounded(context, p.tinted, 12)
                 setTextColor(p.text)
             }
         }
@@ -135,7 +165,27 @@ object Ui {
         return button
     }
 
-    @Suppress("DEPRECATION")
+    /** Small iOS-style tinted chip used in toolbars. Caller adds it to a parent. */
+    fun compactButton(
+        context: Context,
+        p: Palette,
+        title: String,
+        danger: Boolean = false,
+        onClick: () -> Unit
+    ): TextView =
+        TextView(context).apply {
+            text = title
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(if (danger) p.danger else p.text)
+            background = rounded(context, if (danger) Color.TRANSPARENT else p.tinted, 14, if (danger) p.danger else null)
+            minHeight = dp(context, 36)
+            minWidth = dp(context, 36)
+            setPadding(dp(context, 14), 0, dp(context, 14), 0)
+            isClickable = true
+            setOnClickListener { onClick() }
+        }
+
     fun switchRow(
         context: Context,
         p: Palette,
@@ -143,7 +193,7 @@ object Ui {
         title: String,
         checked: Boolean,
         onChange: (Boolean) -> Unit
-    ): Switch {
+    ): IosSwitch {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -158,10 +208,13 @@ object Ui {
             label,
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         )
-        val switch = Switch(context).apply {
-            isChecked = checked
-            setOnCheckedChangeListener { _, isChecked -> onChange(isChecked) }
+        val switch = IosSwitch(context).apply {
+            onColor = p.switchOn
+            offColor = if (p.dark) 0xFF3A3A3C.toInt() else 0xFFE9E9E9.toInt()
+            strokeColor = if (p.dark) 0xFF4A4A4E.toInt() else 0xFFD8D8DC.toInt()
+            setChecked(checked, animate = false)
         }
+        switch.onCheckedChange = { value -> onChange(value) }
         row.addView(switch)
         parent.addView(row)
         return switch
@@ -178,7 +231,7 @@ object Ui {
         enabled: Boolean,
         format: (Int) -> String,
         onChange: (Int) -> Unit
-    ): SeekBar {
+    ): IosSlider {
         val labelRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -201,30 +254,28 @@ object Ui {
         labelRow.addView(valueView)
         parent.addView(labelRow)
 
-        val range = (maxValue - minValue).coerceAtLeast(0)
-
-        return SeekBar(context).apply {
-            max = range
-            progress = (value - minValue).coerceIn(0, range)
+        val slider = IosSlider(context).apply {
+            this.minValue = minValue
+            this.maxValue = maxValue
+            trackFillColor = p.accent
+            trackColor = if (p.dark) 0xFF3A3A3C.toInt() else 0xFFE3E3E3.toInt()
+            knobStrokeColor = if (p.dark) 0xFF4A4A4E.toInt() else 0xFFD8D8DC.toInt()
             isEnabled = enabled
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar?, progressValue: Int, fromUser: Boolean) {
-                    val v = progressValue + minValue
-                    valueView.text = format(v)
-                    onChange(v)
-                }
-
-                override fun onStartTrackingTouch(bar: SeekBar?) {}
-                override fun onStopTrackingTouch(bar: SeekBar?) {}
-            })
-            parent.addView(
-                this,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
+            alpha = if (enabled) 1f else 0.4f
+            setValue(value, notify = false)
+            onValueChange = { v ->
+                valueView.text = format(v)
+                onChange(v)
+            }
         }
+        parent.addView(
+            slider,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        return slider
     }
 
     fun editText(context: Context, p: Palette, hint: String): EditText =
@@ -233,7 +284,7 @@ object Ui {
             textSize = 16f
             setTextColor(p.text)
             setHintTextColor(p.secondary)
-            background = rounded(context, p.inputBg, 12, p.stroke)
+            background = rounded(context, p.inputBg, 12)
             setPadding(
                 dp(context, 14),
                 dp(context, 12),
@@ -243,7 +294,7 @@ object Ui {
             isSingleLine = true
         }
 
-    /** Dark-aware dialog shell with a rounded card body. */
+    /** iOS-alert-style dialog shell: rounded card, centered bold title. */
     class CustomDialog(context: Context, p: Palette, title: String) {
         val dialog: Dialog = Dialog(context)
         val body: LinearLayout = LinearLayout(context).apply {
@@ -256,8 +307,9 @@ object Ui {
             dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
             body.addView(TextView(context).apply {
                 text = title
-                textSize = 19f
+                textSize = 18f
                 typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
                 setTextColor(p.text)
                 setPadding(0, 0, 0, dp(context, 14))
             })

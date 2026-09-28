@@ -22,6 +22,14 @@ object Prefs {
         sp(ctx).edit().putBoolean("sound_enabled", value).apply()
     }
 
+    /** 0 Tap · 1 Pop · 2 Click · 3 Wood · 4 Bubble */
+    fun soundStyle(ctx: Context): Int =
+        sp(ctx).getInt("sound_style", 0)
+
+    fun setSoundStyle(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt("sound_style", value).apply()
+    }
+
     fun soundVolume(ctx: Context): Int =
         sp(ctx).getInt("sound_volume", 60)
 
@@ -45,12 +53,16 @@ object Prefs {
 
     // ---------------- keyboard appearance ----------------
 
-    /** Key height multiplier (0.8 – 1.3). */
-    fun heightFactor(ctx: Context): Float =
-        sp(ctx).getFloat("height_factor", 1.0f)
+    /** Absolute key height in dp (40 – 62). Migrates the old height factor. */
+    fun keyHeightDp(ctx: Context): Int {
+        val prefs = sp(ctx)
+        if (prefs.contains("key_height_dp")) return prefs.getInt("key_height_dp", 48)
+        val factor = prefs.getFloat("height_factor", 1.0f)
+        return (48f * factor).toInt().coerceIn(40, 62)
+    }
 
-    fun setHeightFactor(ctx: Context, value: Float) {
-        sp(ctx).edit().putFloat("height_factor", value).apply()
+    fun setKeyHeightDp(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt("key_height_dp", value).apply()
     }
 
     /** Visual gap between keys in dp (2 – 8). */
@@ -59,6 +71,30 @@ object Prefs {
 
     fun setKeyGapDp(ctx: Context, value: Int) {
         sp(ctx).edit().putInt("key_gap_dp", value).apply()
+    }
+
+    /** Keyboard opacity in percent (40 – 100). Lower = more transparent. */
+    fun keyboardOpacity(ctx: Context): Int =
+        sp(ctx).getInt("keyboard_opacity", 100)
+
+    fun setKeyboardOpacity(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt("keyboard_opacity", value).apply()
+    }
+
+    /** Manual extra bottom padding in dp (0 – 20) for stubborn ROMs. */
+    fun extraBottomDp(ctx: Context): Int =
+        sp(ctx).getInt("extra_bottom_dp", 0)
+
+    fun setExtraBottomDp(ctx: Context, value: Int) {
+        sp(ctx).edit().putInt("extra_bottom_dp", value).apply()
+    }
+
+    /** Path of the chosen keyboard background image, if any. */
+    fun bgImagePath(ctx: Context): String? =
+        sp(ctx).getString("bg_image_path", null)
+
+    fun setBgImagePath(ctx: Context, path: String?) {
+        sp(ctx).edit().putString("bg_image_path", path).apply()
     }
 
     // ---------------- custom layout ----------------
@@ -83,5 +119,18 @@ object Prefs {
 
     fun bumpLayoutVersion(ctx: Context) {
         sp(ctx).edit().putInt("layout_version", layoutVersion(ctx) + 1).apply()
+    }
+
+    // ---------------- emoji recents ----------------
+
+    fun recentEmojis(ctx: Context): List<String> =
+        (sp(ctx).getString("recent_emojis", "") ?: "").split(",").filter { it.isNotEmpty() }
+
+    fun pushRecentEmoji(ctx: Context, emoji: String) {
+        val list = ArrayList(recentEmojis(ctx))
+        list.remove(emoji)
+        list.add(0, emoji)
+        while (list.size > 24) list.removeAt(list.size - 1)
+        sp(ctx).edit().putString("recent_emojis", list.joinToString(",")).apply()
     }
 }

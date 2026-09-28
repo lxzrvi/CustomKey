@@ -2,6 +2,7 @@ package com.customkey.app
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -27,9 +28,9 @@ class KbStyle(
 
 /**
  * A single on-screen keyboard key, drawn manually: rounded background, label,
- * pressed state with a subtle scale animation, long-press support,
- * press-and-hold repeat (backspace) and accessibility descriptions.
- * No drawable assets or external libraries required.
+ * pressed state with a subtle scale animation, optional per-key color,
+ * long-press support, press-and-hold repeat (backspace / custom keys) and
+ * accessibility descriptions. No drawable assets or external libraries.
  */
 class KeyView(
     context: Context,
@@ -38,7 +39,8 @@ class KeyView(
     var weight: Float,
     var heightPx: Int,
     var special: Boolean = false,
-    var repeatable: Boolean = false
+    var repeatable: Boolean = false,
+    var interactive: Boolean = true
 ) : View(context) {
 
     interface Listener {
@@ -60,6 +62,13 @@ class KeyView(
 
     /** Label override while [active] is true (caps lock arrow). */
     var activeLabel: String? = null
+
+    /** Optional per-key background color (from the Keyboard Editor). */
+    var colorOverride: Int? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -99,7 +108,7 @@ class KeyView(
     }
 
     init {
-        isClickable = true
+        isClickable = interactive
         contentDescription = label
     }
 
@@ -125,14 +134,21 @@ class KeyView(
         rect.set(0f, 0f, w, h)
         bgPaint.color = when {
             active -> style.activeBg
-            pressed -> if (special) style.specialBgPressed else style.keyBgPressed
+            pressed -> if (special) style.specialBgPressed
+            else colorOverride?.let { darken(it) } ?: style.keyBgPressed
             special -> style.specialBg
+            colorOverride != null -> colorOverride!!
             else -> style.keyBg
         }
         canvas.drawRoundRect(rect, style.radiusPx, style.radiusPx, bgPaint)
 
         val text = if (active) activeLabel ?: label else label
-        textPaint.color = if (active) style.activeTextColor else style.textColor
+        textPaint.color = when {
+            active -> style.activeTextColor
+            special -> style.textColor
+            colorOverride != null -> contrastText(colorOverride!!)
+            else -> style.textColor
+        }
         textPaint.textSize = if (special) style.specialTextPx else style.textPx
 
         // Shrink long labels (Search, CustomKey…) so they always fit.
@@ -156,6 +172,7 @@ class KeyView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!interactive) return super.onTouchEvent(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 pressed = true
@@ -210,6 +227,20 @@ class KeyView(
 
     private fun isInside(x: Float, y: Float): Boolean =
         x >= -SLOP && y >= -SLOP && x <= width + SLOP && y <= height + SLOP
+
+    private fun darken(color: Int): Int = Color.argb(
+        Color.alpha(color),
+        (Color.red(color) * 0.82f).toInt(),
+        (Color.green(color) * 0.82f).toInt(),
+        (Color.blue(color) * 0.82f).toInt()
+    )
+
+    private fun contrastText(color: Int): Int =
+        if ((0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) > 150) {
+            0xFF1C1C1E.toInt()
+        } else {
+            Color.WHITE
+        }
 
     companion object {
         private const val LONG_PRESS_MS = 420L

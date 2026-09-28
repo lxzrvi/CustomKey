@@ -5,8 +5,6 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Build
 import android.os.SystemClock
 import android.os.VibrationEffect
@@ -20,19 +18,12 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
 
 class CustomKeyService : InputMethodService(), KeyView.Listener {
 
-    private enum class Page { LETTERS, SYMBOLS, EXTRA }
-
-    private class KbPalette(
-        val bg: Int,
-        val style: KbStyle,
-        val popupBg: Int,
-        val previewBg: Int,
-        val previewText: Int
-    )
+    private enum class Page { LETTERS, SYMBOLS, EXTRA, EMOJI }
 
     // ---------------- state ----------------
 
@@ -42,19 +33,18 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     private var shift = false
     private var capsLock = false
     private var lastShiftTapTime = 0L
+    private var emojiCategory = 0
 
     private var enterLabelNow = "↵"
 
     private var previewPopup: PopupWindow? = null
     private var alternatesPopup: PopupWindow? = null
 
-    private var toneGenerator: ToneGenerator? = null
-    private var toneVolume = -1
+    private var sounds: KeySounds? = null
+    private var lastNavBottom = 0
 
     // Snapshot of what was built — to know when a rebuild is needed.
     private var builtVersion = -1
-    private var builtHeightFactor = -1f
-    private var builtGapDp = -1
     private var builtNightMode = -1
     private var lastBuiltPage = Page.LETTERS
     private var lastBuiltShift = false
@@ -84,23 +74,67 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(3), dp(4), dp(3), dp(3))
         }
-
-        // Keep every key ABOVE the system navigation bar — works for both
-        // gesture navigation and 3-button navigation. The bar itself stays
-        // fully system-controlled (hide-arrow / keyboard switcher).
-        root.setOnApplyWindowInsetsListener { view, insets ->
-            val bottom = if (Build.VERSION.SDK_INT >= 30) {
-                insets.getInsets(WindowInsets.Type.navigationBars()).bottom
-            } else {
-                @Suppress("DEPRECATION")
-                insets.systemWindowInsetBottom
-            }
-            view.setPadding(dp(3), dp(4), dp(3), bottom)
-            insets
-        }
-
+        setupWindowInsets()
         buildKeyboard()
         return root
+    }
+
+    /**
+     * Robust navigation-bar handling — the keyboard always stays ABOVE the
+     * system bar (hide-arrow / keyboard switcher), on gesture AND 3-button nav:
+     *
+     * 1. Lay the IME window out edge-to-edge (behind the nav bar) so the system
+     *    reports REAL insets instead of a consumed/empty value.
+     * 2. Listen for insets on the window's decor view — nothing in between can
+     *    consume them before we see them.
+     * 3. Re-apply in onWindowShown() as a fallback for ROMs that don't dispatch.
+     * 4. The editor's "Extra bottom padding" slider covers any stubborn ROM.
+     */
+    private fun setupWindowInsets() {
+        val imeDialog = window ?: return
+        val win = imeDialog.window ?: return
+        val decor = win.decorView ?: return
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            win.setDecorFitsSystemWindows(false)
+        } else {
+            @Suppress("DEPRECATION")
+            decor.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+
+        decor.setOnApplyWindowInsetsListener { _, insets ->
+            applyBottomInset(insetsBottom(insets))
+            insets
+        }
+    }
+
+    private fun insetsBottom(insets: WindowInsets): Int =
+        if (Build.VERSION.SDK_INT >= 30) {
+            insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+        } else {
+            @Suppress("DEPRECATION")
+            insets.systemWindowInsetBottom
+        }
+
+    private fun applyBottomInset(navBottom: Int) {
+        if (!::root.isInitialized) return
+        lastNavBottom = navBottom
+        root.setPadding(
+            dp(3), dp(4), dp(3),
+            navBottom + dp(3) + dp(Prefs.extraBottomDp(this).coerceIn(0, 20))
+        )
+    }
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        // Fallback for ROMs where the decor listener never fires.
+        try {
+            val decor = window?.window?.decorView ?: return
+            val insets = decor.rootWindowInsets ?: return
+            applyBottomInset(insetsBottom(insets))
+        } catch (_: Exception) {
+        }
     }
 
     /** Never use the ugly fullscreen/extract mode in landscape. */
@@ -130,8 +164,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     }
 
     override fun onDestroy() {
-        toneGenerator?.release()
-        toneGenerator = null
+        sounds?.release()
+        sounds = null
         super.onDestroy()
     }
 
@@ -141,8 +175,12 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         if (!::root.isInitialized) return
         hidePopups()
 
-        val palette = palette()
-        root.setBackgroundColor(palette.bg)
+        val palette = KeyboardTheme.palette(this)
+        val bgDrawable = KeyboardTheme.backgroundDrawable(this)
+        if (bgDrawable != null) root.background = bgDrawable
+        else root.setBackgroundColor(palette.bg)
+
+        applyBottomInset(lastNavBottom)
         root.removeAllViews()
 
         when (page) {
@@ -152,11 +190,10 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             }
             Page.SYMBOLS -> buildSymbolsPage()
             Page.EXTRA -> buildExtraPage()
+            Page.EMOJI -> buildEmojiPage()
         }
 
         builtVersion = Prefs.layoutVersion(this)
-        builtHeightFactor = Prefs.heightFactor(this)
-        builtGapDp = Prefs.keyGapDp(this)
         builtNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         lastBuiltPage = page
         lastBuiltShift = shift
@@ -164,15 +201,11 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         lastBuiltEnter = enterLabelNow
     }
 
-    /** Rebuild when the saved layout, sizing or system theme changed. */
+    /** Rebuild when the saved layout/appearance or system theme changed. */
     private fun refreshIfNeeded() {
         val version = Prefs.layoutVersion(this)
-        val factor = Prefs.heightFactor(this)
-        val gap = Prefs.keyGapDp(this)
         val night = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        if (version != builtVersion || factor != builtHeightFactor ||
-            gap != builtGapDp || night != builtNightMode
-        ) {
+        if (version != builtVersion || night != builtNightMode) {
             buildKeyboard()
         }
     }
@@ -186,9 +219,9 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     }
 
     private fun buildRow(keys: List<KeyDef>): LinearLayout {
-        val palette = palette()
-        val heightPx = dp((BASE_KEY_HEIGHT_DP * Prefs.heightFactor(this)).toInt())
-        val gapPx = dp(Prefs.keyGapDp(this))
+        val palette = KeyboardTheme.palette(this)
+        val heightPx = dp(Prefs.keyHeightDp(this).coerceIn(40, 62))
+        val gapPx = dp(Prefs.keyGapDp(this).coerceIn(2, 8))
         val halfGapPx = (gapPx / 2f).toInt().coerceAtLeast(0)
 
         val row = LinearLayout(this).apply {
@@ -204,12 +237,14 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                 weight = keyDef.weight,
                 heightPx = heightPx,
                 special = isSpecialKey(keyDef),
-                repeatable = keyDef.type == KeyType.DELETE
+                repeatable = keyDef.type == KeyType.DELETE ||
+                        (keyDef.type == KeyType.CUSTOM && keyDef.repeatOnHold)
             )
             view.tag = keyDef
-            view.listener = this@CustomKeyService
+            view.listener = this
             view.active = keyDef.type == KeyType.SHIFT && (shift || capsLock)
             if (capsLock) view.activeLabel = "⇪"
+            keyDef.color?.let { view.colorOverride = palette.withAlpha(it) }
             view.contentDescription = contentDescriptionFor(keyDef)
             view.applyRowLayout(halfGapPx)
             row.addView(view)
@@ -237,6 +272,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         KeyType.TO_SYMBOLS -> "Symbols"
         KeyType.TO_EXTRA -> "More symbols"
         KeyType.TO_LETTERS -> "Letters"
+        KeyType.EMOJI -> "Emoji"
         KeyType.CUSTOM -> keyDef.label
     }
 
@@ -292,13 +328,134 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     private fun bottomRow(): RowDef = RowDef(
         mutableListOf(
-            KeyDef(KeyType.TO_LETTERS, "ABC", "", 1.5f),
+            KeyDef(KeyType.TO_LETTERS, "ABC", "", 1.4f),
+            KeyDef(KeyType.EMOJI, "😀", "", 1f),
             KeyDef(KeyType.CUSTOM, ",", ","),
             KeyDef(KeyType.SPACE, "CustomKey", "", 4f),
             KeyDef(KeyType.CUSTOM, ".", "."),
-            KeyDef(KeyType.ENTER, "↵", "", 1.5f)
+            KeyDef(KeyType.ENTER, "↵", "", 1.4f)
         )
     )
+
+    // ---------------- emoji page ----------------
+
+    private fun buildEmojiPage() {
+        val palette = KeyboardTheme.palette(this)
+
+        // Category tabs (recents first when available)
+        val recents = Prefs.recentEmojis(this)
+        val categories = ArrayList<List<String>>()
+        val labels = ArrayList<String>()
+        if (recents.isNotEmpty()) {
+            categories.add(recents)
+            labels.add("🕘")
+        }
+        Emojis.CATEGORIES.forEach { (label, list) ->
+            categories.add(list)
+            labels.add(label)
+        }
+        if (emojiCategory >= categories.size) emojiCategory = 0
+
+        val tabsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+        }
+        val tabs = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(4), dp(4), dp(4), 0)
+        }
+        labels.forEachIndexed { index, label ->
+            tabs.addView(TextView(this).apply {
+                text = label
+                textSize = 18f
+                gravity = Gravity.CENTER
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                background = if (index == emojiCategory) {
+                    Ui.rounded(this@CustomKeyService, palette.style.specialBg, 14)
+                } else {
+                    null
+                }
+                setOnClickListener {
+                    emojiCategory = index
+                    buildKeyboard()
+                }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)
+            ).apply { marginEnd = dp(4) })
+        }
+        tabsScroll.addView(tabs)
+        root.addView(
+            tabsScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        // Emoji grid (scrollable, fixed height so the window keeps its size)
+        val gridScroll = ScrollView(this)
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(6), dp(2), dp(6), dp(2))
+        }
+        val items = categories[emojiCategory]
+        val perRow = 8
+        var i = 0
+        while (i < items.size) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            for (j in 0 until perRow) {
+                val index = i + j
+                val cell = TextView(this).apply {
+                    textSize = 24f
+                    gravity = Gravity.CENTER
+                    if (index < items.size) {
+                        val emoji = items[index]
+                        text = emoji
+                        contentDescription = "Emoji $emoji"
+                        setOnClickListener {
+                            feedback()
+                            Prefs.pushRecentEmoji(this@CustomKeyService, emoji)
+                            typeText(emoji)
+                        }
+                    }
+                }
+                row.addView(cell, LinearLayout.LayoutParams(0, dp(42), 1f))
+            }
+            grid.addView(
+                row,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(42)
+                )
+            )
+            i += perRow
+        }
+        gridScroll.addView(
+            grid,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        root.addView(
+            gridScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(158)
+            )
+        )
+
+        // Bottom row: back to letters + space + backspace
+        root.addView(
+            buildRow(
+                listOf(
+                    KeyDef(KeyType.TO_LETTERS, "ABC", "", 1.4f),
+                    KeyDef(KeyType.SPACE, "CustomKey", "", 5f),
+                    KeyDef(KeyType.DELETE, "Delete", "", 1.4f)
+                )
+            )
+        )
+    }
 
     // ---------------- key actions ----------------
 
@@ -332,19 +489,37 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                 page = Page.LETTERS
                 buildKeyboard()
             }
+            KeyType.EMOJI -> {
+                page = Page.EMOJI
+                buildKeyboard()
+            }
         }
     }
 
     override fun onKeyRepeat(view: KeyView) {
         val keyDef = view.tag as? KeyDef ?: return
-        // Backspace hold — fast deletes without re-evaluating caps every tick.
-        if (keyDef.type == KeyType.DELETE) {
-            currentInputConnection?.deleteSurroundingText(1, 0)
+        when {
+            keyDef.type == KeyType.DELETE ->
+                currentInputConnection?.deleteSurroundingText(1, 0)
+
+            // Custom keys configured as "Repeat" in the editor.
+            keyDef.type == KeyType.CUSTOM && keyDef.repeatOnHold ->
+                currentInputConnection?.commitText(
+                    keyDef.output.ifEmpty { keyDef.label }, 1
+                )
         }
     }
 
     override fun onKeyLongPress(view: KeyView) {
         val keyDef = view.tag as? KeyDef ?: return
+
+        // Custom keys with a configured long-press shortcut.
+        if (keyDef.type == KeyType.CUSTOM && keyDef.longPressOutput.isNotEmpty()) {
+            feedback()
+            typeText(keyDef.longPressOutput)
+            return
+        }
+
         val alternates = when (keyDef.type) {
             KeyType.LETTER -> letterAlternates[keyDef.output.ifEmpty { keyDef.label }]
             KeyType.CUSTOM -> customAlternates[keyDef.output]
@@ -451,7 +626,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
-    // ---------------- popups (preview + long-press alternatives) ----------------
+    // ---------------- popups ----------------
+    // Previews pop ABOVE the keyboard (over the app content), never below.
 
     override fun onKeyTouchDown(view: KeyView) {
         val keyDef = view.tag as? KeyDef ?: return
@@ -466,7 +642,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     private fun showPreviewPopup(anchor: KeyView) {
         hidePreviewPopup()
-        val palette = palette()
+        val palette = KeyboardTheme.palette(this)
         val size = dp(56)
 
         val textView = TextView(this).apply {
@@ -488,8 +664,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         val screenW = resources.displayMetrics.widthPixels
         val x = (location[0] + anchor.width / 2 - size / 2)
             .coerceIn(0, (screenW - size).coerceAtLeast(0))
-        var y = location[1] - size - dp(6)
-        if (y < 0) y = location[1] + anchor.height + dp(6)
+        // Negative y = above the keyboard window → over the app content.
+        val y = location[1] - size - dp(6)
 
         popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
         previewPopup = popup
@@ -497,7 +673,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     private fun showAlternatesPopup(anchor: KeyView, alternates: String) {
         hidePopups()
-        val palette = palette()
+        val palette = KeyboardTheme.palette(this)
         val keyHeight = dp(44)
 
         val row = LinearLayout(this).apply {
@@ -558,8 +734,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         anchor.getLocationInWindow(location)
         val x = (location[0] + anchor.width / 2 - w / 2)
             .coerceIn(dp(4), (screenW - w - dp(4)).coerceAtLeast(dp(4)))
-        var y = location[1] - h - dp(8)
-        if (y < 0) y = location[1] + anchor.height + dp(8)
+        // Above the keyboard window when there is room, else just over the top row.
+        val y = location[1] - h - dp(8)
 
         popup.width = w
         popup.height = h
@@ -587,17 +763,9 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     private fun feedback() {
         if (Prefs.soundEnabled(this)) {
             try {
-                val volume = Prefs.soundVolume(this)
-                if (volume > 0) {
-                    if (toneGenerator == null || toneVolume != volume) {
-                        toneGenerator?.release()
-                        toneGenerator = ToneGenerator(AudioManager.STREAM_SYSTEM, volume)
-                        toneVolume = volume
-                    }
-                    toneGenerator?.startTone(ToneGenerator.TONE_CDMA_PIP, 35)
-                }
+                if (sounds == null) sounds = KeySounds(this)
+                sounds?.play(Prefs.soundStyle(this), Prefs.soundVolume(this))
             } catch (_: Exception) {
-                toneGenerator = null
             }
         }
         if (Prefs.vibrationEnabled(this)) {
@@ -613,36 +781,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
-    // ---------------- theme ----------------
-
-    private fun palette(): KbPalette {
-        val dark = isDarkMode
-        val density = resources.displayMetrics.density
-        val scaled = resources.displayMetrics.scaledDensity
-        val accentBg = if (dark) 0xFF8AB4F8.toInt() else 0xFF1A73E8.toInt()
-        val accentText = if (dark) 0xFF10141C.toInt() else Color.WHITE
-
-        val style = KbStyle(
-            keyBg = if (dark) 0xFF35353B.toInt() else Color.WHITE,
-            keyBgPressed = if (dark) 0xFF26262B.toInt() else 0xFFDADCE0.toInt(),
-            specialBg = if (dark) 0xFF24242A.toInt() else 0xFFD2D5DA.toInt(),
-            specialBgPressed = if (dark) 0xFF1C1C21.toInt() else 0xFFBFC3C9.toInt(),
-            activeBg = accentBg,
-            textColor = if (dark) 0xFFE8EAED.toInt() else 0xFF202124.toInt(),
-            activeTextColor = accentText,
-            radiusPx = 9f * density,
-            textPx = 17f * scaled,
-            specialTextPx = 13f * scaled
-        )
-
-        return KbPalette(
-            bg = if (dark) 0xFF1B1B1F.toInt() else 0xFFE8EAED.toInt(),
-            style = style,
-            popupBg = if (dark) 0xFF26262B.toInt() else 0xFFF1F3F4.toInt(),
-            previewBg = if (dark) 0xFFE8EAED.toInt() else 0xFF3C4043.toInt(),
-            previewText = if (dark) 0xFF202124.toInt() else Color.WHITE
-        )
-    }
+    // ---------------- helpers ----------------
 
     private fun roundedDrawable(color: Int, radiusPx: Int): GradientDrawable =
         GradientDrawable().apply {
@@ -654,7 +793,6 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val BASE_KEY_HEIGHT_DP = 48
         private const val DOUBLE_TAP_MS = 350L
     }
 }

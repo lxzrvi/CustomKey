@@ -18,14 +18,19 @@ enum class KeyType {
     ENTER,
     TO_SYMBOLS,
     TO_EXTRA,
-    TO_LETTERS
+    TO_LETTERS,
+    EMOJI
 }
 
 data class KeyDef(
     val type: KeyType,
     val label: String,
     val output: String = "",
-    val weight: Float = 1f
+    val weight: Float = 1f,
+    val color: Int? = null,
+    val longPressOutput: String = "",
+    val repeatOnHold: Boolean = false,
+    val id: Long = 0L
 )
 
 data class RowDef(val keys: MutableList<KeyDef>)
@@ -63,21 +68,35 @@ object Layouts {
                 ),
                 RowDef(
                     mutableListOf(
-                        KeyDef(KeyType.TO_SYMBOLS, "?123", "", 1.5f),
+                        KeyDef(KeyType.TO_SYMBOLS, "?123", "", 1.4f),
+                        KeyDef(KeyType.EMOJI, "😀", "", 1f),
                         KeyDef(KeyType.CUSTOM, ",", ","),
                         KeyDef(KeyType.SPACE, "CustomKey", "", 4f),
                         KeyDef(KeyType.CUSTOM, ".", "."),
-                        KeyDef(KeyType.ENTER, "Enter", "", 1.5f)
+                        KeyDef(KeyType.ENTER, "Enter", "", 1.4f)
                     )
                 )
             )
         )
     }
 
-    /** Currently saved layout, or the default when nothing valid is stored. */
+    /** Currently saved layout (with stable ids), or the default. */
     fun current(ctx: Context): KeyboardDef {
-        val json = Prefs.layoutJson(ctx) ?: return defaultLetters()
-        return fromJson(json) ?: defaultLetters()
+        val json = Prefs.layoutJson(ctx) ?: return withIds(defaultLetters())
+        return withIds(fromJson(json) ?: defaultLetters())
+    }
+
+    /** Make sure every key has a unique stable id (used for batch selection). */
+    private fun withIds(def: KeyboardDef): KeyboardDef {
+        var next = 1L
+        def.rows.forEach { row ->
+            val withId = row.keys.map { key ->
+                if (key.id == 0L) key.copy(id = System.nanoTime() + (next++)) else key
+            }
+            row.keys.clear()
+            row.keys.addAll(withId)
+        }
+        return def
     }
 
     fun save(ctx: Context, def: KeyboardDef) {
@@ -97,13 +116,16 @@ object Layouts {
         def.rows.forEach { row ->
             val keysArray = JSONArray()
             row.keys.forEach { key ->
-                keysArray.put(
-                    JSONObject()
-                        .put("type", key.type.name)
-                        .put("label", key.label)
-                        .put("output", key.output)
-                        .put("weight", key.weight.toDouble())
-                )
+                val o = JSONObject()
+                    .put("type", key.type.name)
+                    .put("label", key.label)
+                    .put("output", key.output)
+                    .put("weight", key.weight.toDouble())
+                    .put("lp", key.longPressOutput)
+                    .put("rep", key.repeatOnHold)
+                    .put("id", key.id)
+                if (key.color != null) o.put("color", key.color.toLong())
+                keysArray.put(o)
             }
             rowsArray.put(JSONObject().put("keys", keysArray))
         }
@@ -129,7 +151,11 @@ object Layouts {
                             type = type,
                             label = o.optString("label", ""),
                             output = o.optString("output", ""),
-                            weight = o.optDouble("weight", 1.0).toFloat().coerceIn(0.4f, 4.0f)
+                            weight = o.optDouble("weight", 1.0).toFloat().coerceIn(0.4f, 4.0f),
+                            color = if (o.has("color")) o.getLong("color").toInt() else null,
+                            longPressOutput = o.optString("lp", ""),
+                            repeatOnHold = o.optBoolean("rep", false),
+                            id = o.optLong("id", 0L)
                         )
                     )
                 }

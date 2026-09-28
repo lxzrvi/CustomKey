@@ -3,6 +3,7 @@ package com.customkey.app
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
@@ -16,7 +17,6 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 
@@ -25,8 +25,11 @@ class MainActivity : Activity() {
     private lateinit var palette: Ui.Palette
     private lateinit var setupCard: LinearLayout
 
-    private var soundSeekBar: SeekBar? = null
-    private var vibrationSeekBar: SeekBar? = null
+    private var soundSlider: IosSlider? = null
+    private var vibrationSlider: IosSlider? = null
+    private var styleRow: LinearLayout? = null
+
+    private var sounds: KeySounds? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var pollingSetup = false
@@ -57,6 +60,12 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        sounds?.release()
+        sounds = null
+        super.onDestroy()
+    }
+
     private fun dp(value: Int): Int = Ui.dp(this, value)
 
     // ------------------------------------------------------------------
@@ -69,18 +78,19 @@ class MainActivity : Activity() {
             setBackgroundColor(palette.bg)
             isFillViewport = true
         }
+        Ui.applyNavBarInsetPadding(scroll)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(26), dp(22), dp(30))
+            setPadding(dp(16), dp(24), dp(16), dp(30))
         }
 
         // ---------- header ----------
 
         root.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ck_icon)
+            setImageDrawable(Ui.roundedBitmap(this@MainActivity, R.drawable.ck_icon, 19))
             adjustViewBounds = true
-        }, LinearLayout.LayoutParams(dp(76), dp(76)).apply {
+        }, LinearLayout.LayoutParams(dp(78), dp(78)).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
@@ -98,7 +108,7 @@ class MainActivity : Activity() {
             textSize = 15f
             gravity = Gravity.CENTER
             setTextColor(palette.secondary)
-            setPadding(0, 0, 0, dp(22))
+            setPadding(0, 0, 0, dp(20))
         })
 
         // ---------- setup (auto-detects state) ----------
@@ -115,7 +125,7 @@ class MainActivity : Activity() {
             textSize = 16f
             setTextColor(palette.text)
             setHintTextColor(palette.secondary)
-            background = Ui.rounded(this@MainActivity, palette.inputBg, 14, palette.stroke)
+            background = Ui.rounded(this@MainActivity, palette.inputBg, 14)
             setPadding(dp(16), dp(14), dp(16), dp(14))
             isSingleLine = false
             minLines = 3
@@ -145,10 +155,55 @@ class MainActivity : Activity() {
 
         Ui.switchRow(this, palette, settingsCard, "Key sound", Prefs.soundEnabled(this)) { enabled ->
             Prefs.setSoundEnabled(this, enabled)
-            soundSeekBar?.isEnabled = enabled
+            soundSlider?.isEnabled = enabled
+            soundSlider?.alpha = if (enabled) 1f else 0.4f
+            styleRow?.alpha = if (enabled) 1f else 0.4f
         }
 
-        soundSeekBar = Ui.seekRow(
+        // 5 premium sound styles with instant preview
+        styleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10), 0, dp(2))
+        }
+        settingsCard.addView(styleRow)
+
+        val styleChips = ArrayList<TextView>()
+        val restyleChips: () -> Unit = {
+            val selected = Prefs.soundStyle(this)
+            styleChips.forEachIndexed { i, chip ->
+                chip.setTextColor(if (i == selected) Color.WHITE else palette.text)
+                chip.background = Ui.rounded(
+                    this,
+                    if (i == selected) palette.accent else palette.tinted,
+                    16
+                )
+            }
+        }
+        KeySounds.NAMES.forEachIndexed { i, name ->
+            val chip = TextView(this).apply {
+                text = name
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setPadding(dp(14), 0, dp(14), 0)
+                isClickable = true
+                setOnClickListener {
+                    Prefs.setSoundStyle(this@MainActivity, i)
+                    restyleChips()
+                    if (sounds == null) sounds = KeySounds(this@MainActivity)
+                    sounds?.play(i, Prefs.soundVolume(this@MainActivity))
+                }
+            }
+            styleChips.add(chip)
+            styleRow?.addView(
+                chip,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)
+                ).apply { marginEnd = dp(8) }
+            )
+        }
+        restyleChips()
+
+        soundSlider = Ui.seekRow(
             this, palette, settingsCard,
             "Sound volume", 10, 100,
             Prefs.soundVolume(this), Prefs.soundEnabled(this),
@@ -159,10 +214,11 @@ class MainActivity : Activity() {
 
         Ui.switchRow(this, palette, settingsCard, "Vibration", Prefs.vibrationEnabled(this)) { enabled ->
             Prefs.setVibrationEnabled(this, enabled)
-            vibrationSeekBar?.isEnabled = enabled
+            vibrationSlider?.isEnabled = enabled
+            vibrationSlider?.alpha = if (enabled) 1f else 0.4f
         }
 
-        vibrationSeekBar = Ui.seekRow(
+        vibrationSlider = Ui.seekRow(
             this, palette, settingsCard,
             "Vibration strength", 10, 100,
             Prefs.vibrationStrength(this), Prefs.vibrationEnabled(this),
@@ -290,7 +346,7 @@ class MainActivity : Activity() {
         else @Suppress("DEPRECATION") info.versionCode.toLong()
         "${info.versionName} ($code)"
     } catch (_: Exception) {
-        "1.1"
+        "1.2"
     }
 
     private fun showVersionDialog() {
@@ -301,6 +357,7 @@ class MainActivity : Activity() {
                     "No ads • no tracking • no internet"
             textSize = 15f
             setTextColor(palette.text)
+            gravity = Gravity.CENTER
             setLineSpacing(dp(4).toFloat(), 1f)
         })
         Ui.button(this, palette, dialog.body, "Close") {
@@ -319,6 +376,7 @@ class MainActivity : Activity() {
                     "Everything is open source:\ngithub.com/lxzrvi/CustomKey"
             textSize = 15f
             setTextColor(palette.text)
+            gravity = Gravity.CENTER
             setLineSpacing(dp(4).toFloat(), 1f)
         })
         Ui.button(this, palette, dialog.body, "Close") {
