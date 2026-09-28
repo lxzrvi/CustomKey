@@ -743,37 +743,44 @@ class EditorActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(0, dp(2), 0, dp(2))
             }
-            val restyleSwatches: () -> Unit = {
-                swatchRow.removeAllViews()
-                COLOR_SWATCHES.forEach { c ->
-                    swatchRow.addView(TextView(this).apply {
-                        textSize = 14f
-                        gravity = Gravity.CENTER
-                        text = if (c == chosenColor) "✓" else ""
-                        setTextColor(
-                            when {
-                                c == null -> palette.text
-                                isLightColor(c) -> Color.BLACK
-                                else -> Color.WHITE
-                            }
-                        )
-                        background = Ui.rounded(
-                            this@EditorActivity,
-                            c ?: palette.inputBg,
-                            16,
-                            if (c == null) palette.hairline else null
-                        )
-                        isClickable = true
-                        setOnClickListener {
-                            chosenColor = c
-                            restyleSwatches()
+            val swatchViews = ArrayList<TextView>()
+            COLOR_SWATCHES.forEach { c ->
+                val swatch = TextView(this).apply {
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    isClickable = true
+                    setTextColor(
+                        when {
+                            c == null -> palette.text
+                            isLightColor(c) -> Color.BLACK
+                            else -> Color.WHITE
                         }
-                    }, LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                        marginEnd = dp(10)
-                    })
+                    )
+                    background = Ui.rounded(
+                        this@EditorActivity,
+                        c ?: palette.inputBg,
+                        16,
+                        if (c == null) palette.hairline else null
+                    )
+                    setOnClickListener {
+                        chosenColor = c
+                        swatchViews.forEachIndexed { i, v ->
+                            v.text = if (COLOR_SWATCHES[i] == chosenColor) "✓" else ""
+                        }
+                    }
                 }
+                swatchViews.add(swatch)
+                swatchRow.addView(
+                    swatch,
+                    LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                        marginEnd = dp(10)
+                    }
+                )
             }
-            restyleSwatches()
+            // Initial selection marks
+            swatchViews.forEachIndexed { i, v ->
+                v.text = if (COLOR_SWATCHES[i] == chosenColor) "✓" else ""
+            }
             swatchScroll.addView(swatchRow)
             content.addView(
                 swatchScroll,

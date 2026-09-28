@@ -74,9 +74,29 @@ object Ui {
     /** Rounded version of any drawable resource (e.g. the app logo). */
     fun roundedBitmap(context: Context, resId: Int, radiusDp: Int): Drawable {
         val bitmap = BitmapFactory.decodeResource(context.resources, resId)
-        val drawable = RoundedBitmapDrawableFactory.create(context.resources, bitmap)
-        drawable.cornerRadius = dp(context, radiusDp).toFloat()
-        return drawable
+        val radius = dp(context, radiusDp).toFloat()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        }
+        return object : Drawable() {
+            private val rect = RectF()
+
+            override fun draw(canvas: Canvas) {
+                rect.set(bounds)
+                canvas.drawRoundRect(rect, radius, radius, paint)
+            }
+
+            override fun setAlpha(alpha: Int) {
+                paint.alpha = alpha
+            }
+
+            override fun setColorFilter(colorFilter: ColorFilter?) {
+                paint.colorFilter = colorFilter
+            }
+
+            @Suppress("DEPRECATION")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
     }
 
     /** Keeps activity content above the system navigation bar (edge-to-edge safe). */

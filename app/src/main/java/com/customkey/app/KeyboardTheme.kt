@@ -17,23 +17,19 @@ class KbPalette(
     val style: KbStyle,
     val popupBg: Int,
     val previewBg: Int,
-    val previewText: Int
+    val previewText: Int,
+    private val opacityPercent: Int
 ) {
     /** Apply the global keyboard opacity to a color (text stays opaque). */
-    fun withAlpha(color: Int): Int = Color.argb(
-        (opacityFraction * Color.alpha(color)).toInt(),
-        Color.red(color),
-        Color.green(color),
-        Color.blue(color)
-    )
-
-    private val opacityFraction: Float
-        get() = opacity.coerceIn(30, 100) / 100f
-
-    private val opacity: Int
-        get() = storedOpacity
-
-    var storedOpacity: Int = 100
+    fun withAlpha(color: Int): Int {
+        val fraction = opacityPercent.coerceIn(30, 100) / 100f
+        return Color.argb(
+            (fraction * Color.alpha(color)).toInt(),
+            Color.red(color),
+            Color.green(color),
+            Color.blue(color)
+        )
+    }
 }
 
 object KeyboardTheme {

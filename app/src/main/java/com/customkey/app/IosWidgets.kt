@@ -163,11 +163,11 @@ class IosSlider(context: Context) : View(context) {
         if (width <= 0) return
 
         trackPaint.color = trackColor
-        rect.set(pad, cy - thickness / 2f, width - pad, cy + thickness / 2f)
+        rect.set(pad.toFloat(), cy - thickness / 2f, (width - pad).toFloat(), cy + thickness / 2f)
         canvas.drawRoundRect(rect, thickness / 2f, thickness / 2f, trackPaint)
 
         trackPaint.color = trackFillColor
-        rect.set(pad, cy - thickness / 2f, knobX(), cy + thickness / 2f)
+        rect.set(pad.toFloat(), cy - thickness / 2f, knobX(), cy + thickness / 2f)
         canvas.drawRoundRect(rect, thickness / 2f, thickness / 2f, trackPaint)
 
         val r = knobRadius() * if (active) 1.15f else 1f
