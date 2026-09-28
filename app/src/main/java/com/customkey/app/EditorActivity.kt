@@ -1046,9 +1046,9 @@ class EditorActivity : Activity(), KeyView.Listener {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = Ui.rounded(this, palette.accent, 14)
+            background = Ui.rounded(this@EditorActivity, palette.accent, 14)
             setOnClickListener { showNewPresetDialog() }
-            val img = ImageView(this).apply {
+            val img = ImageView(this@EditorActivity).apply {
                 setImageResource(R.drawable.ic_add)
                 drawable?.setTint(palette.accentText)
             }
@@ -1242,7 +1242,7 @@ class EditorActivity : Activity(), KeyView.Listener {
                 gravity = Gravity.CENTER
                 setPadding(dp(12), dp(8), dp(12), dp(8))
                 setTextColor(palette.text)
-                background = Ui.rounded(this, palette.tinted, 14)
+                background = Ui.rounded(this@EditorActivity, palette.tinted, 14)
                 setOnClickListener { selectTab(index) }
             }
             tabRow.addView(
@@ -1436,7 +1436,7 @@ class EditorActivity : Activity(), KeyView.Listener {
         val textPage = pages[2]
 
         var textColor = style?.textColor
-        var textSize = style?.textSizeSp ?: 16
+        var txtSize = style?.textSizeSp ?: 16
         var bold = style?.bold ?: false
         var italic = style?.italic ?: false
         var textPosition = style?.textPosition ?: 0
@@ -1449,8 +1449,8 @@ class EditorActivity : Activity(), KeyView.Listener {
         })
         addSwatchRow(textPage, swatchColors) { textColor = it }
 
-        Ui.seekRow(this, palette, textPage, "Text size", 10, 30, textSize, true, { "$it sp" }) {
-            textSize = it
+        Ui.seekRow(this, palette, textPage, "Text size", 10, 30, txtSize, true, { "$it sp" }) {
+            txtSize = it
         }
 
         Ui.switchRow(this, palette, textPage, "Bold", bold) { bold = it }
@@ -1562,7 +1562,7 @@ class EditorActivity : Activity(), KeyView.Listener {
                     shadowDistanceDp = shadowDistance,
                     shadowBlurDp = shadowBlur,
                     textColor = textColor,
-                    textSizeSp = textSize,
+                    textSizeSp = txtSize,
                     bold = bold,
                     italic = italic,
                     textPosition = textPosition
@@ -1796,7 +1796,7 @@ class EditorActivity : Activity(), KeyView.Listener {
         var borderWidth = template?.borderWidthDp ?: 1
         var useShadow = template?.shadow ?: false
         var textColor = template?.textColor
-        var textSize = template?.textSizeSp ?: 16
+        var txtSize = template?.textSizeSp ?: 16
         var bold = template?.bold ?: false
         var italic = template?.italic ?: false
 
@@ -1806,7 +1806,7 @@ class EditorActivity : Activity(), KeyView.Listener {
         Ui.seekRow(this, palette, content, "Shadow", 0, 1, if (useShadow) 1 else 0, true, {
             if (it == 1) "On" else "Off"
         }) { useShadow = it == 1 }
-        Ui.seekRow(this, palette, content, "Text size", 10, 30, textSize, true, { "$it sp" }) { textSize = it }
+        Ui.seekRow(this, palette, content, "Text size", 10, 30, txtSize, true, { "$it sp" }) { txtSize = it }
         Ui.switchRow(this, palette, content, "Bold", bold) { bold = it }
         Ui.switchRow(this, palette, content, "Italic", italic) { italic = it }
 
@@ -1837,7 +1837,7 @@ class EditorActivity : Activity(), KeyView.Listener {
                             borderWidthDp = if (borderWidth <= 0) null else borderWidth,
                             shadow = useShadow,
                             textColor = textColor,
-                            textSizeSp = textSize,
+                            textSizeSp = txtSize,
                             bold = bold,
                             italic = italic
                         )

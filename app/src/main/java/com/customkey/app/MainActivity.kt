@@ -60,19 +60,19 @@ class MainActivity : android.app.Activity() {
 
     private fun createScreen() {
         val scroll = ScrollView(this).apply {
-            isScrollbarEnabled = false
+            isVerticalScrollBarEnabled = false
         }
         val screen = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(10), dp(8), dp(10), dp(16))
         }
         Ui.applySystemBarsPadding(scroll)
-        scroll.fillViewport = true
+        scroll.setFillViewport(true)
 
         // ---- app icon ----
         val iconHolder = FrameLayout(this)
         val icon = ImageView(this).apply {
-            setImageDrawable(Ui.roundedBitmap(this, R.drawable.ck_icon, 22))
+            setImageDrawable(Ui.roundedBitmap(this@MainActivity, R.drawable.ck_icon, 22))
             contentDescription = "CustomKey app icon"
         }
         iconHolder.addView(
@@ -155,7 +155,7 @@ class MainActivity : android.app.Activity() {
                     "Your layout and settings never leave this device."
             textSize = 13f
             setTextColor(palette.secondary)
-            setLineSpacing(dp(2), 1f)
+            setLineSpacing(dp(2).toFloat(), 1f)
             setPadding(0, 0, 0, dp(8))
         })
         aboutCard.addView(
@@ -276,7 +276,7 @@ class MainActivity : android.app.Activity() {
             """.trimIndent()
             textSize = 14f
             setTextColor(palette.text)
-            setLineSpacing(dp(3), 1f)
+            setLineSpacing(dp(3).toFloat(), 1f)
         })
         dialog.show()
     }

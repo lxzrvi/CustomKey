@@ -11,6 +11,20 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 
+/** Visual style shared by the keys of one keyboard page. All sizes are pixels. */
+class KbStyle(
+    val keyBg: Int,
+    val keyBgPressed: Int,
+    val specialBg: Int,
+    val specialBgPressed: Int,
+    val activeBg: Int,
+    val textColor: Int,
+    val activeTextColor: Int,
+    val radiusPx: Float,
+    val textPx: Float,
+    val specialTextPx: Float
+)
+
 /** Colors + key style shared by the IME service and the editor's live preview. */
 class KbPalette(
     val bg: Int,

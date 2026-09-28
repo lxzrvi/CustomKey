@@ -38,7 +38,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     private lateinit var root: FrameLayout
     private lateinit var content: LinearLayout
-    private lateinit var overlay: FrameLayout
+    private lateinit var overlayLayer: FrameLayout
 
     private var page = Page.LETTERS
     private var shift = false
@@ -100,7 +100,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(3), dp(4), dp(3), dp(3))
         }
-        overlay = FrameLayout(this).apply { visibility = View.GONE }
+        overlayLayer = FrameLayout(this).apply { visibility = View.GONE }
         root = FrameLayout(this).apply {
             addView(
                 content,
@@ -110,7 +110,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                 )
             )
             addView(
-                overlay,
+                overlayLayer,
                 FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT
@@ -846,12 +846,12 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         val meta = if (shift) KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON else 0
         try {
             if (shift) {
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, now, now, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
+                ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
             }
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, now, now, keyCode, 0, meta))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, now, now, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, meta))
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, meta))
             if (shift) {
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, now, now, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
+                ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0, meta))
             }
         } catch (_: Exception) {
         }
@@ -959,24 +959,24 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         chipRow.addView(selectChip)
         sheet.addView(chipRow)
 
-        overlay.removeAllViews()
-        overlay.addView(
+        overlayLayer.removeAllViews()
+        overlayLayer.addView(
             sheet,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
         )
-        overlay.setOnTouchListener { _, event -> trackpadTouch(event) }
-        overlay.visibility = View.VISIBLE
+        overlayLayer.setOnTouchListener { _, event -> trackpadTouch(event) }
+        overlayLayer.visibility = View.VISIBLE
     }
 
     private fun exitTrackpad() {
         if (!trackpadActive) return
         trackpadActive = false
-        overlay.visibility = View.GONE
-        overlay.removeAllViews()
-        overlay.setOnTouchListener(null)
+        overlayLayer.visibility = View.GONE
+        overlayLayer.removeAllViews()
+        overlayLayer.setOnTouchListener(null)
     }
 
     private var trackpadDownTime = 0L
@@ -1086,16 +1086,16 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         val anchorLeftInWindow = anchorLoc[0] - rootLoc[0]
         val anchorTopInWindow = anchorLoc[1] - rootLoc[1]
 
-        overlay.removeAllViews()
+        overlayLayer.removeAllViews()
         val lp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         )
-        overlay.addView(row, lp)
-        overlay.visibility = View.VISIBLE
+        overlayLayer.addView(row, lp)
+        overlayLayer.visibility = View.VISIBLE
 
         // measure to center over the anchor
-        overlay.post {
+        overlayLayer.post {
             val w = row.width
             val screenW = root.width
             lp.leftMargin = (anchorLeftInWindow + anchor.width / 2 - w / 2)
@@ -1140,8 +1140,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         altSelected = null
         altSourceKey = null
         if (!trackpadActive) {
-            overlay.visibility = View.GONE
-            overlay.removeAllViews()
+            overlayLayer.visibility = View.GONE
+            overlayLayer.removeAllViews()
         } else {
             // keep the trackpad sheet
         }
@@ -1225,13 +1225,14 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         val strength = Prefs.vibrationStrength(this)
         if (strength <= 0) return
         try {
-            val vibrator: Vibrator? =
+            val vibrator: Vibrator = (
                 if (Build.VERSION.SDK_INT >= 31) {
                     getSystemService(VibratorManager::class.java)?.defaultVibrator
                 } else {
                     @Suppress("DEPRECATION")
                     getSystemService(Vibrator::class.java)
-                } ?: return
+                }
+                ) ?: return
             val ms = 30L
             if (vibrator.hasAmplitudeControl()) {
                 val amplitude = (strength * 255 / 100).coerceIn(60, 255)
