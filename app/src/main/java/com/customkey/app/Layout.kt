@@ -6,10 +6,7 @@ import org.json.JSONObject
 
 /** What a key does. */
 enum class KeyType {
-    /** Single character, shift-aware (a → A). */
     LETTER,
-
-    /** Free-form key — types any text/snippet. */
     CUSTOM,
 
     SHIFT,
@@ -19,8 +16,47 @@ enum class KeyType {
     TO_SYMBOLS,
     TO_EXTRA,
     TO_LETTERS,
-    EMOJI
+    EMOJI,
+    TO_CURSOR,
+
+    // clipboard / cursor page
+    CLIP_COPY,
+    CLIP_CUT,
+    CLIP_PASTE,
+    CLIP_ALL,
+    SEL_TOGGLE,
+    SEL_START_LEFT,
+    SEL_END_RIGHT,
+    ARROW_LEFT,
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    NEXT_FIELD
 }
+
+/**
+ * Per-key visual overrides from the Keyboard Editor.
+ * Every field is optional — null means "use the theme default".
+ */
+data class KeyVisual(
+    val cornerRadiusDp: Int? = null,
+    val opacityPercent: Int? = null,
+    val borderColor: Int? = null,
+    val borderWidthDp: Int? = null,
+    /** 1 top · 2 right · 4 bottom · 8 left · 15 = all */
+    val borderSides: Int? = null,
+    val shadow: Boolean = false,
+    val shadowSoft: Boolean = true,
+    val shadowAngleDeg: Int = 315,
+    val shadowDistanceDp: Int = 3,
+    val shadowBlurDp: Int = 4,
+    val textColor: Int? = null,
+    val textSizeSp: Int? = null,
+    val bold: Boolean? = null,
+    val italic: Boolean? = null,
+    /** 0 center · 1 top · 2 bottom · 3 left · 4 right */
+    val textPosition: Int? = null
+)
 
 data class KeyDef(
     val type: KeyType,
@@ -30,6 +66,11 @@ data class KeyDef(
     val color: Int? = null,
     val longPressOutput: String = "",
     val repeatOnHold: Boolean = false,
+    /** Custom long-press characters (also shown as the key's hint). */
+    val alternates: String = "",
+    /** Per-key height multiplier (0.7 – 1.4). */
+    val heightFactor: Float = 1f,
+    val style: KeyVisual? = null,
     val id: Long = 0L
 )
 
@@ -68,12 +109,13 @@ object Layouts {
                 ),
                 RowDef(
                     mutableListOf(
-                        KeyDef(KeyType.TO_SYMBOLS, "?123", "", 1.4f),
-                        KeyDef(KeyType.EMOJI, "😀", "", 1f),
+                        KeyDef(KeyType.TO_SYMBOLS, "?123", "", 1.2f),
+                        KeyDef(KeyType.EMOJI, "Emoji", "", 1f),
+                        KeyDef(KeyType.TO_CURSOR, "Cursor", "", 1f),
                         KeyDef(KeyType.CUSTOM, ",", ","),
-                        KeyDef(KeyType.SPACE, "CustomKey", "", 4f),
+                        KeyDef(KeyType.SPACE, "CustomKey", "", 3.4f),
                         KeyDef(KeyType.CUSTOM, ".", "."),
-                        KeyDef(KeyType.ENTER, "Enter", "", 1.4f)
+                        KeyDef(KeyType.ENTER, "Enter", "", 1.2f)
                     )
                 )
             )
@@ -86,7 +128,6 @@ object Layouts {
         return withIds(fromJson(json) ?: defaultLetters())
     }
 
-    /** Make sure every key has a unique stable id (used for batch selection). */
     private fun withIds(def: KeyboardDef): KeyboardDef {
         var next = 1L
         def.rows.forEach { row ->
@@ -111,6 +152,41 @@ object Layouts {
 
     // ---------------- JSON ----------------
 
+    fun visualToJson(v: KeyVisual): JSONObject = JSONObject()
+        .put("rad", v.cornerRadiusDp ?: -1)
+        .put("op", v.opacityPercent ?: -1)
+        .put("bc", v.borderColor?.toLong() ?: -1L)
+        .put("bw", v.borderWidthDp ?: -1)
+        .put("bs", v.borderSides ?: -1)
+        .put("sh", v.shadow)
+        .put("shs", v.shadowSoft)
+        .put("sha", v.shadowAngleDeg)
+        .put("shd", v.shadowDistanceDp)
+        .put("shb", v.shadowBlurDp)
+        .put("tc", v.textColor?.toLong() ?: -1L)
+        .put("ts", v.textSizeSp ?: -1)
+        .put("b", v.bold ?: false)
+        .put("bi", v.italic ?: false)
+        .put("bp", v.textPosition ?: -1)
+
+    fun visualFromJson(o: JSONObject): KeyVisual = KeyVisual(
+        cornerRadiusDp = o.optInt("rad", -1).let { if (it < 0) null else it },
+        opacityPercent = o.optInt("op", -1).let { if (it < 0) null else it },
+        borderColor = o.optLong("bc", -1L).let { if (it < 0) null else it.toInt() },
+        borderWidthDp = o.optInt("bw", -1).let { if (it < 0) null else it },
+        borderSides = o.optInt("bs", -1).let { if (it < 0) null else it },
+        shadow = o.optBoolean("sh", false),
+        shadowSoft = o.optBoolean("shs", true),
+        shadowAngleDeg = o.optInt("sha", 315),
+        shadowDistanceDp = o.optInt("shd", 3),
+        shadowBlurDp = o.optInt("shb", 4),
+        textColor = o.optLong("tc", -1L).let { if (it < 0) null else it.toInt() },
+        textSizeSp = o.optInt("ts", -1).let { if (it < 0) null else it },
+        bold = if (o.has("b")) o.getBoolean("b") else null,
+        italic = if (o.has("bi")) o.getBoolean("bi") else null,
+        textPosition = o.optInt("bp", -1).let { if (it < 0) null else it }
+    )
+
     fun toJson(def: KeyboardDef): String {
         val rowsArray = JSONArray()
         def.rows.forEach { row ->
@@ -123,8 +199,11 @@ object Layouts {
                     .put("weight", key.weight.toDouble())
                     .put("lp", key.longPressOutput)
                     .put("rep", key.repeatOnHold)
+                    .put("alt", key.alternates)
+                    .put("hf", key.heightFactor.toDouble())
                     .put("id", key.id)
                 if (key.color != null) o.put("color", key.color.toLong())
+                if (key.style != null) o.put("vs", visualToJson(key.style!!))
                 keysArray.put(o)
             }
             rowsArray.put(JSONObject().put("keys", keysArray))
@@ -155,6 +234,9 @@ object Layouts {
                             color = if (o.has("color")) o.getLong("color").toInt() else null,
                             longPressOutput = o.optString("lp", ""),
                             repeatOnHold = o.optBoolean("rep", false),
+                            alternates = o.optString("alt", ""),
+                            heightFactor = o.optDouble("hf", 1.0).toFloat().coerceIn(0.7f, 1.4f),
+                            style = if (o.has("vs")) visualFromJson(o.getJSONObject("vs")) else null,
                             id = o.optLong("id", 0L)
                         )
                     )
@@ -166,8 +248,6 @@ object Layouts {
             null
         }
     }
-
-    // ---------------- validation ----------------
 
     /** Essential keys every usable layout must still contain. */
     fun missingEssentials(def: KeyboardDef): List<KeyType> {

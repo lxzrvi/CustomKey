@@ -1,44 +1,36 @@
 package com.customkey.app
 
-import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
+import android.view.View
 
-class MainActivity : Activity() {
+class MainActivity : android.app.Activity() {
 
     private lateinit var palette: Ui.Palette
     private lateinit var setupCard: LinearLayout
+    private lateinit var setupHolder: LinearLayout
+    private lateinit var testField: EditText
 
-    private var soundSlider: IosSlider? = null
-    private var vibrationSlider: IosSlider? = null
-    private var styleRow: LinearLayout? = null
-
-    private var sounds: KeySounds? = null
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var pollingSetup = false
-
-    // Keeps the setup card fresh while the system IME picker / settings are open.
+    private val pollHandler = Handler(Looper.getMainLooper())
     private val pollRunnable = object : Runnable {
         override fun run() {
             refreshSetupCard()
-            if (pollingSetup) handler.postDelayed(this, 1200)
+            if (!isImeSelected()) pollHandler.postDelayed(this, 700)
         }
     }
 
@@ -50,20 +42,14 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        pollingSetup = true
-        handler.post(pollRunnable)
+        refreshSetupCard()
+        pollHandler.removeCallbacks(pollRunnable)
+        pollHandler.postDelayed(pollRunnable, 700)
     }
 
     override fun onPause() {
-        pollingSetup = false
-        handler.removeCallbacks(pollRunnable)
+        pollHandler.removeCallbacks(pollRunnable)
         super.onPause()
-    }
-
-    override fun onDestroy() {
-        sounds?.release()
-        sounds = null
-        super.onDestroy()
     }
 
     private fun dp(value: Int): Int = Ui.dp(this, value)
@@ -73,193 +59,127 @@ class MainActivity : Activity() {
     // ------------------------------------------------------------------
 
     private fun createScreen() {
-
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(palette.bg)
-            isFillViewport = true
+            isScrollbarEnabled = false
         }
-        Ui.applyNavBarInsetPadding(scroll)
-
-        val root = LinearLayout(this).apply {
+        val screen = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(24), dp(16), dp(30))
+            setPadding(dp(10), dp(8), dp(10), dp(16))
         }
+        Ui.applySystemBarsPadding(scroll)
+        scroll.fillViewport = true
 
-        // ---------- header ----------
+        // ---- app icon ----
+        val iconHolder = FrameLayout(this)
+        val icon = ImageView(this).apply {
+            setImageDrawable(Ui.roundedBitmap(this, R.drawable.ck_icon, 22))
+            contentDescription = "CustomKey app icon"
+        }
+        iconHolder.addView(
+            icon,
+            FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER)
+        )
+        screen.addView(
+            iconHolder,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(14); bottomMargin = dp(8) }
+        )
 
-        root.addView(ImageView(this).apply {
-            setImageDrawable(Ui.roundedBitmap(this@MainActivity, R.drawable.ck_icon, 19))
-            adjustViewBounds = true
-        }, LinearLayout.LayoutParams(dp(78), dp(78)).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-        })
-
-        root.addView(TextView(this).apply {
+        // ---- title ----
+        screen.addView(TextView(this).apply {
             text = "CustomKey"
-            textSize = 30f
+            textSize = 26f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(palette.text)
-            setPadding(0, dp(10), 0, dp(4))
         })
-
-        root.addView(TextView(this).apply {
-            text = "Your keyboard, your way."
-            textSize = 15f
+        screen.addView(TextView(this).apply {
+            text = "Build your own keyboard"
+            textSize = 14f
             gravity = Gravity.CENTER
             setTextColor(palette.secondary)
-            setPadding(0, 0, 0, dp(20))
+            setPadding(0, 0, 0, dp(4))
         })
 
-        // ---------- setup (auto-detects state) ----------
-
-        setupCard = Ui.addCard(this, palette, root)
-        refreshSetupCard()
-
-        // ---------- test ----------
-
-        Ui.heading(this, palette, root, "TEST KEYBOARD")
-
-        val testInput = EditText(this).apply {
-            hint = "Tap here and start typing…"
-            textSize = 16f
-            setTextColor(palette.text)
-            setHintTextColor(palette.secondary)
-            background = Ui.rounded(this@MainActivity, palette.inputBg, 14)
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            isSingleLine = false
-            minLines = 3
-            gravity = Gravity.TOP
+        // ---- setup card (hidden when everything is done) ----
+        setupHolder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
         }
-        root.addView(
-            testInput,
+        setupCard = Ui.addCard(this, palette, setupHolder)
+        screen.addView(
+            setupHolder,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(10) }
+        )
+
+        // ---- test keyboard ----
+        Ui.heading(this, palette, screen, "TEST KEYBOARD")
+        val testCard = Ui.addCard(this, palette, screen)
+        testField = Ui.editText(this, palette, "Tap here to type…")
+        testField.inputType = InputType.TYPE_CLASS_TEXT
+        testCard.addView(testField)
+
+        // ---- edit keyboard ----
+        val editCard = Ui.addCard(this, palette, screen)
+        editCard.addView(TextView(this).apply {
+            text = "Make it yours — keys, layout, colors, sounds."
+            textSize = 14f
+            setTextColor(palette.secondary)
+            setPadding(0, 0, 0, dp(10))
+        })
+        Ui.button(this, palette, editCard, "Edit Keyboard") {
+            startActivity(Intent(this, EditorActivity::class.java))
+        }
+
+        // ---- keyboard options ----
+        Ui.heading(this, palette, screen, "KEYBOARD OPTIONS")
+        val optionsCard = Ui.addCard(this, palette, screen)
+        optionsCard.setPadding(dp(16), dp(10), dp(16), dp(6))
+        Ui.switchRow(
+            this, palette, optionsCard, "Space trackpad",
+            Prefs.trackpadEnabled(this)
+        ) { checked ->
+            Prefs.setTrackpadEnabled(this, checked)
+        }
+
+        // ---- about ----
+        Ui.heading(this, palette, screen, "ABOUT")
+        val aboutCard = Ui.addCard(this, palette, screen)
+        aboutCard.addView(TextView(this).apply {
+            text = "CustomKey ${versionLabel()}\nNo ads · No internet · No tracking\n" +
+                    "Your layout and settings never leave this device."
+            textSize = 13f
+            setTextColor(palette.secondary)
+            setLineSpacing(dp(2), 1f)
+            setPadding(0, 0, 0, dp(8))
+        })
+        aboutCard.addView(
+            Ui.compactButton(this, palette, "View version history") {
+                showVersionDialog()
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         )
 
-        // ---------- keyboard ----------
-
-        Ui.heading(this, palette, root, "KEYBOARD")
-
-        Ui.button(this, palette, root, "Edit Keyboard") {
-            startActivity(Intent(this, EditorActivity::class.java))
-        }
-
-        // ---------- settings (wired + persistent) ----------
-
-        Ui.heading(this, palette, root, "SETTINGS")
-
-        val settingsCard = Ui.addCard(this, palette, root)
-
-        Ui.switchRow(this, palette, settingsCard, "Key sound", Prefs.soundEnabled(this)) { enabled ->
-            Prefs.setSoundEnabled(this, enabled)
-            soundSlider?.isEnabled = enabled
-            soundSlider?.alpha = if (enabled) 1f else 0.4f
-            styleRow?.alpha = if (enabled) 1f else 0.4f
-        }
-
-        // 5 premium sound styles with instant preview
-        styleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(10), 0, dp(2))
-        }
-        settingsCard.addView(styleRow)
-
-        val styleChips = ArrayList<TextView>()
-        val restyleChips: () -> Unit = {
-            val selected = Prefs.soundStyle(this)
-            styleChips.forEachIndexed { i, chip ->
-                chip.setTextColor(if (i == selected) Color.WHITE else palette.text)
-                chip.background = Ui.rounded(
-                    this,
-                    if (i == selected) palette.accent else palette.tinted,
-                    16
-                )
-            }
-        }
-        KeySounds.NAMES.forEachIndexed { i, name ->
-            val chip = TextView(this).apply {
-                text = name
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setPadding(dp(14), 0, dp(14), 0)
-                isClickable = true
-                setOnClickListener {
-                    Prefs.setSoundStyle(this@MainActivity, i)
-                    restyleChips()
-                    if (sounds == null) sounds = KeySounds(this@MainActivity)
-                    sounds?.play(i, Prefs.soundVolume(this@MainActivity))
-                }
-            }
-            styleChips.add(chip)
-            styleRow?.addView(
-                chip,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, dp(36)
-                ).apply { marginEnd = dp(8) }
+        scroll.addView(
+            screen,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
             )
-        }
-        restyleChips()
-
-        soundSlider = Ui.seekRow(
-            this, palette, settingsCard,
-            "Sound volume", 10, 100,
-            Prefs.soundVolume(this), Prefs.soundEnabled(this),
-            { "$it%" }
-        ) { volume ->
-            Prefs.setSoundVolume(this, volume)
-        }
-
-        Ui.switchRow(this, palette, settingsCard, "Vibration", Prefs.vibrationEnabled(this)) { enabled ->
-            Prefs.setVibrationEnabled(this, enabled)
-            vibrationSlider?.isEnabled = enabled
-            vibrationSlider?.alpha = if (enabled) 1f else 0.4f
-        }
-
-        vibrationSlider = Ui.seekRow(
-            this, palette, settingsCard,
-            "Vibration strength", 10, 100,
-            Prefs.vibrationStrength(this), Prefs.vibrationEnabled(this),
-            { "$it%" }
-        ) { strength ->
-            Prefs.setVibrationStrength(this, strength)
-        }
-
-        // ---------- about ----------
-
-        Ui.heading(this, palette, root, "ABOUT")
-
-        Ui.button(this, palette, root, "Version ${versionLabel()}", filled = false) {
-            showVersionDialog()
-        }
-        Ui.button(this, palette, root, "Privacy", filled = false) {
-            showPrivacyDialog()
-        }
-        Ui.button(this, palette, root, "Share app", filled = false) {
-            shareApp()
-        }
-        Ui.button(this, palette, root, "Feedback", filled = false) {
-            sendFeedback()
-        }
-
-        // ---------- footer ----------
-
-        root.addView(TextView(this).apply {
-            text = "CustomKey ${versionLabel()}\nMade by lxzrvi"
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(palette.secondary)
-            setPadding(0, dp(36), 0, dp(10))
-        })
-
-        scroll.addView(root)
+        )
         setContentView(scroll)
     }
 
     // ------------------------------------------------------------------
-    // SETUP STATE — only the pending step is shown
+    // SETUP STATE
     // ------------------------------------------------------------------
 
     private fun refreshSetupCard() {
@@ -268,6 +188,13 @@ class MainActivity : Activity() {
 
         val enabled = isImeEnabled()
         val selected = enabled && isImeSelected()
+
+        if (selected) {
+            // Fully set up — hide the card entirely.
+            setupHolder.visibility = View.GONE
+            return
+        }
+        setupHolder.visibility = View.VISIBLE
 
         if (!enabled) {
             setupCard.addView(TextView(this).apply {
@@ -286,7 +213,7 @@ class MainActivity : Activity() {
             Ui.button(this, palette, setupCard, "Enable CustomKey") {
                 startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             }
-        } else if (!selected) {
+        } else {
             setupCard.addView(TextView(this).apply {
                 text = "Almost there!"
                 textSize = 18f
@@ -304,20 +231,6 @@ class MainActivity : Activity() {
                 val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.showInputMethodPicker()
             }
-        } else {
-            setupCard.addView(TextView(this).apply {
-                text = "✓  CustomKey is active"
-                textSize = 18f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(palette.good)
-                setPadding(0, 0, 0, dp(4))
-            })
-            setupCard.addView(TextView(this).apply {
-                text = "Your keyboard is set up and ready to use."
-                textSize = 15f
-                setTextColor(palette.secondary)
-                setPadding(0, 0, 0, dp(6))
-            })
         }
     }
 
@@ -346,68 +259,25 @@ class MainActivity : Activity() {
         else @Suppress("DEPRECATION") info.versionCode.toLong()
         "${info.versionName} ($code)"
     } catch (_: Exception) {
-        "1.2"
+        "1.3"
     }
 
     private fun showVersionDialog() {
-        val dialog = Ui.CustomDialog(this, palette, "Version")
+        val dialog = Ui.CustomDialog(this, palette, "Version history")
         dialog.body.addView(TextView(this).apply {
-            text = "CustomKey ${versionLabel()}\n\n" +
-                    "A fully offline, open-source custom keyboard.\n" +
-                    "No ads • no tracking • no internet"
-            textSize = 15f
+            text = """
+                1.3 — Key editor pro: styles, shadows, drag-move, presets, trackpad, 10 premium sounds, clipboard & cursor keys.
+
+                1.2 — Emoji page & picker, long-press symbols, key colors, background image, transparency, sticky preview, batch edit.
+
+                1.1 — First public release. Custom layouts, sounds, vibration, symbols & extra pages.
+
+                1.0 — Original internal build.
+            """.trimIndent()
+            textSize = 14f
             setTextColor(palette.text)
-            gravity = Gravity.CENTER
-            setLineSpacing(dp(4).toFloat(), 1f)
+            setLineSpacing(dp(3), 1f)
         })
-        Ui.button(this, palette, dialog.body, "Close") {
-            dialog.dialog.dismiss()
-        }
         dialog.show()
-    }
-
-    private fun showPrivacyDialog() {
-        val dialog = Ui.CustomDialog(this, palette, "Privacy")
-        dialog.body.addView(TextView(this).apply {
-            text = "CustomKey is completely private.\n\n" +
-                    "• No data collection, analytics or tracking\n" +
-                    "• No internet access — nothing you type ever leaves your device\n" +
-                    "• Your layout and settings are stored locally, on your device only\n\n" +
-                    "Everything is open source:\ngithub.com/lxzrvi/CustomKey"
-            textSize = 15f
-            setTextColor(palette.text)
-            gravity = Gravity.CENTER
-            setLineSpacing(dp(4).toFloat(), 1f)
-        })
-        Ui.button(this, palette, dialog.body, "Close") {
-            dialog.dialog.dismiss()
-        }
-        dialog.show()
-    }
-
-    private fun shareApp() {
-        val text = "CustomKey — your keyboard, your way. ⌨️\n" +
-                "A fast, private and fully customizable Android keyboard.\n" +
-                "https://github.com/lxzrvi/CustomKey"
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, text)
-        }
-        startActivity(Intent.createChooser(intent, "Share CustomKey"))
-    }
-
-    private fun sendFeedback() {
-        val mail = Intent(
-            Intent.ACTION_SENDTO,
-            Uri.parse(
-                "mailto:thaparavi382@gmail.com" +
-                        "?subject=" + Uri.encode("CustomKey Feedback")
-            )
-        )
-        try {
-            startActivity(mail)
-        } catch (_: Exception) {
-            Toast.makeText(this, "No email app found", Toast.LENGTH_SHORT).show()
-        }
     }
 }

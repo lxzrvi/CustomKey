@@ -120,6 +120,27 @@ object Ui {
         }
     }
 
+    /** Keeps activity content below the status bar AND above the navigation bar. */
+    fun applySystemBarsPadding(view: View) {
+        val baseTop = view.paddingTop
+        val baseBottom = view.paddingBottom
+        view.setOnApplyWindowInsetsListener { v, insets ->
+            if (Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                v.setPadding(v.paddingLeft, baseTop + bars.top, v.paddingRight, baseBottom + bars.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                v.setPadding(
+                    v.paddingLeft,
+                    baseTop + insets.systemWindowInsetTop,
+                    v.paddingRight,
+                    baseBottom + insets.systemWindowInsetBottom
+                )
+            }
+            insets
+        }
+    }
+
     fun heading(context: Context, p: Palette, parent: LinearLayout, title: String): TextView {
         val tv = TextView(context).apply {
             text = title

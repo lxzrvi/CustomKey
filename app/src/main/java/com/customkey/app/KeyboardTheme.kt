@@ -79,14 +79,40 @@ object KeyboardTheme {
         )
     }
 
-    /** User-picked keyboard background image (center-crop + readability scrim). */
+    /** User-picked keyboard background image (center-crop + readability scrim + optional blur). */
     fun backgroundDrawable(context: Context): Drawable? {
         val path = Prefs.bgImagePath(context) ?: return null
         return try {
-            val bitmap = BitmapFactory.decodeFile(path) ?: return null
+            val raw = BitmapFactory.decodeFile(path) ?: return null
+            val blur = Prefs.bgBlur(context)
+            val bitmap = if (blur > 0) blurBitmap(raw, blur) else raw
             KeyboardBgDrawable(bitmap, Ui.isDark(context))
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Cheap, dependency-free blur: heavy downscale + bilinear upscale, repeated
+     * for very strong blur. Looks like a gaussian at keyboard resolutions.
+     */
+    private fun blurBitmap(source: Bitmap, radius: Int): Bitmap {
+        return try {
+            val strength = radius.coerceIn(1, 25)
+            // downscale factor grows with blur strength
+            val factor = 1 + (strength / 4f)
+            var w = (source.width / factor).toInt().coerceAtLeast(1)
+            var h = (source.height / factor).toInt().coerceAtLeast(1)
+            var small = Bitmap.createScaledBitmap(source, w, h, true)
+            // second pass for strong blur
+            if (strength > 12) {
+                w = (w / 2f).toInt().coerceAtLeast(1)
+                h = (h / 2f).toInt().coerceAtLeast(1)
+                small = Bitmap.createScaledBitmap(small, w, h, true)
+            }
+            Bitmap.createScaledBitmap(small, source.width, source.height, true)
+        } catch (_: Exception) {
+            source
         }
     }
 }

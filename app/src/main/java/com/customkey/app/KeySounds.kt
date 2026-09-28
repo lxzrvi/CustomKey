@@ -12,24 +12,34 @@ import kotlin.math.exp
 import kotlin.math.sin
 
 /**
- * Five premium key-press sounds, synthesized on the fly as 16-bit PCM WAV
+ * Ten premium key-press sounds, synthesized on the fly as 16-bit PCM WAV
  * files and played through SoundPool. No audio assets, no internet, no libraries.
  *
- * 0 Tap    – crisp neutral press
- * 1 Pop    – soft low pop
- * 2 Click  – sharp mechanical click
- * 3 Wood   – warm wooden tap
- * 4 Bubble – playful rising blip
+ * Every sound has a soft ~1.5 ms attack and a final fade-out window so there is
+ * never a harsh "chirp" or click at the start or the end — just a smooth,
+ * satisfying press.
+ *
+ * 0 Tap     5 Thock
+ * 1 Pop     6 Snap
+ * 2 Click   7 Mellow
+ * 3 Wood    8 Crystal
+ * 4 Bubble  9 Feather   · 10 = user-custom (pitch + duration)
  */
 class KeySounds(private val context: Context) {
 
     companion object {
-        val NAMES = arrayOf("Tap", "Pop", "Click", "Wood", "Bubble")
+        val NAMES = arrayOf(
+            "Tap", "Pop", "Click", "Wood", "Bubble",
+            "Thock", "Snap", "Mellow", "Crystal", "Feather"
+        )
+        const val STYLE_CUSTOM = 10
         private const val SAMPLE_RATE = 44100
+        private const val ATTACK = 0.0015   // soft 1.5 ms attack
+        private const val RELEASE = 0.004   // 4 ms fade-out — kills end clicks
     }
 
     private var pool: SoundPool? = null
-    private val soundIds = IntArray(NAMES.size)
+    private val soundIds = IntArray(NAMES.size + 1)
     private val loaded = HashSet<Int>()
 
     private fun ensureLoaded() {
@@ -46,9 +56,10 @@ class KeySounds(private val context: Context) {
             soundPool.setOnLoadCompleteListener { _, sampleId, status ->
                 if (status == 0) loaded.add(sampleId)
             }
-            for (i in soundIds.indices) {
+            for (i in 0 until NAMES.size) {
                 soundIds[i] = soundPool.load(wavFile(i).absolutePath, 1)
             }
+            soundIds[STYLE_CUSTOM] = soundPool.load(customWavFile().absolutePath, 1)
             pool = soundPool
         } catch (_: Exception) {
             pool = null
@@ -64,6 +75,21 @@ class KeySounds(private val context: Context) {
             val v = (volumePercent / 100f).coerceIn(0f, 1f)
             soundPool.play(id, v, v, 1, 0, 1f)
         }
+    }
+
+    /** Re-synthesize the custom sound after its pitch/duration changed. */
+    fun refreshCustom() {
+        // Always drop the cached file so the next load uses the new params.
+        File(context.cacheDir, "key_sound_custom.wav").delete()
+        val soundPool = pool ?: return
+        val id = soundIds[STYLE_CUSTOM]
+        if (id > 0) {
+            try {
+                soundPool.unload(id)
+            } catch (_: Exception) {
+            }
+        }
+        soundIds[STYLE_CUSTOM] = soundPool.load(customWavFile().absolutePath, 1)
     }
 
     fun release() {
@@ -82,40 +108,72 @@ class KeySounds(private val context: Context) {
         return file
     }
 
-    private fun synth(style: Int): ShortArray {
-        val seconds = when (style) {
-            0 -> 0.040
-            1 -> 0.055
-            2 -> 0.024
-            3 -> 0.065
-            else -> 0.075
+    private fun customWavFile(): File {
+        val file = File(context.cacheDir, "key_sound_custom.wav")
+        if (!file.exists() || file.length() == 0L) {
+            writeWav(file, synthCustom())
         }
-        val decay = when (style) {
-            0 -> 95.0
-            1 -> 48.0
-            2 -> 240.0
-            3 -> 60.0
-            else -> 32.0
-        }
-        val count = (SAMPLE_RATE * seconds).toInt()
+        return file
+    }
+
+    /**
+     * Partial-based synthesis with smooth attack + exponential decay +
+     * fade-out window. [frequency] may sweep over the note.
+     */
+    private fun synthOne(
+        partials: List<Pair<Double, Double>>,   // (frequency, amplitude)
+        durationSec: Double,
+        decay: Double,
+        sweep: Double = 1.0,                    // end frequency multiplier
+        overall: Double = 0.60
+    ): ShortArray {
+        val count = (SAMPLE_RATE * durationSec).toInt().coerceAtLeast(8)
         val data = ShortArray(count)
         for (i in 0 until count) {
             val t = i.toDouble() / SAMPLE_RATE
-            val envelope = exp(-t * decay)
-            val value = when (style) {
-                0 -> sin(2 * PI * 1250 * t) * 0.8 + sin(2 * PI * 2500 * t) * 0.2
-                1 -> sin(2 * PI * (300.0 - 2200.0 * t) * t)
-                2 -> sin(2 * PI * 1900 * t) * 0.65 + noise(i) * 0.35
-                3 -> sin(2 * PI * 820 * t) * 0.6 + sin(2 * PI * 1230 * t) * 0.3
-                else -> sin(2 * PI * (350.0 + 5200.0 * t) * t) * 0.85
+            val progress = t / durationSec
+
+            // envelope: soft attack → exponential decay → final fade window
+            var envelope = exp(-t * decay)
+            if (t < ATTACK) envelope *= t / ATTACK
+            val releaseStart = durationSec - RELEASE
+            if (t > releaseStart) envelope *= ((durationSec - t) / RELEASE).coerceIn(0.0, 1.0)
+
+            var value = 0.0
+            for ((baseFreq, amp) in partials) {
+                val f = baseFreq * (1.0 + (sweep - 1.0) * progress)
+                value += sin(2 * PI * f * t) * amp
             }
-            data[i] = (value * envelope * 0.62 * Short.MAX_VALUE).toInt().toShort()
+            data[i] = (value * envelope * overall * Short.MAX_VALUE).toInt().toShort()
         }
         return data
     }
 
-    private fun noise(i: Int): Double =
-        ((i * 2654435761L).ushr(16) % 1000) / 500.0 - 1.0
+    private fun synth(style: Int): ShortArray = when (style) {
+        0 -> synthOne(listOf(1100.0 to 0.85, 2200.0 to 0.15), 0.042, 115.0, 0.94)
+        1 -> synthOne(listOf(280.0 to 1.0), 0.058, 55.0, 0.62)
+        2 -> synthOne(listOf(1700.0 to 0.9, 850.0 to 0.1), 0.022, 260.0, 1.0)
+        3 -> synthOne(listOf(780.0 to 0.7, 1170.0 to 0.3), 0.062, 68.0, 0.97)
+        4 -> synthOne(listOf(380.0 to 1.0), 0.072, 36.0, 2.1)
+        5 -> synthOne(listOf(190.0 to 1.0, 95.0 to 0.25), 0.050, 62.0, 0.8)
+        6 -> synthOne(listOf(2000.0 to 0.8, 1000.0 to 0.2), 0.016, 330.0, 1.0)
+        7 -> synthOne(listOf(520.0 to 0.65, 780.0 to 0.35), 0.072, 46.0, 0.98)
+        8 -> synthOne(listOf(1560.0 to 0.6, 2340.0 to 0.4), 0.034, 140.0, 1.0, 0.5)
+        else -> synthOne(listOf(640.0 to 1.0), 0.046, 52.0, 0.7, 0.45)
+    }
+
+    private fun synthCustom(): ShortArray {
+        val pitch = Prefs.customSoundPitch(context).coerceIn(60, 160) / 100.0
+        val durationMs = Prefs.customSoundDuration(context).coerceIn(15, 90)
+        val base = 1100.0 * pitch
+        return synthOne(
+            partials = listOf(base to 0.85, base * 2.0 to 0.15),
+            durationSec = durationMs / 1000.0,
+            decay = 4.6 * 1000.0 / durationMs,   // decay scales with length
+            sweep = 0.94,
+            overall = 0.60
+        )
+    }
 
     private fun writeWav(file: File, data: ShortArray) {
         try {

@@ -1,87 +1,50 @@
-# CustomKey ⌨️
+# CustomKey 🔩⌨️
 
-**Your keyboard, your way.** A fast, private and fully customizable Android keyboard —
-zero dependencies, zero analytics, 100% programmatic UI (no XML layouts, no AppCompat).
-
-![Build](https://github.com/lxzrvi/CustomKey/actions/workflows/build.yml/badge.svg)
+**Build your own keyboard.** CustomKey is a fully customizable Android IME —
+every key, layout, color, sound and behavior is editable on-device.
+No ads, no internet, no tracking: zero dependencies, zero permissions beyond vibration.
 
 ## Features
 
-### Keyboard
-- Premium neutral-grey design that follows the system **Light/Dark theme**
-- Always stays **above the system navigation bar** (hide-arrow / keyboard-switcher bar)
-  on both **gesture** and **3-button** navigation — edge-to-edge insets are handled on
-  the IME window itself, plus an optional manual "extra bottom padding"
-- **Shift** with active state, **double-tap → Caps Lock**, **auto-capitalization**
-- **Hold backspace** to continuously delete
-- Context-aware **Enter key**: ↵ / Done / Go / Search / Send / Next / Prev
-- **Number & symbol page** (`?123`) + **extra symbols page** (`=\<`)
-- **Full Android emoji page** (all categories + recents) via the 😀 key
-- **Long-press keys** for accents, digits and punctuation (a → à á â ä ã å …)
-- Key-press **preview popups** that appear **above the keyboard**, press animation
-- **Per-key colors**, custom key width, keyboard background image, transparency
+### ✏️ Keyboard Editor
+- **Live preview** at the top — tap any key to edit it, **hold & drag** to move it anywhere (drop on *Trash* to delete)
+- **Per-key styling**: corner radius, transparency, key color, borders (color + thickness + *per side*: top / right / bottom / left), drop shadows (soft/hard, angle, distance, blur)
+- **Per-key text**: color, size, bold, italic, position (center / top / bottom / left / right), custom `.ttf` fonts
+- **Key sizing**: per-key width and height, global key height / gap
+- **Long-press actions**: alternate characters (shown as small hint chars, fully editable), long-press output, repeat-on-hold
+- **Add new keys** with position choice (left / right / above / below / end) — letters, function keys, emoji, clipboard keys…
+- **Multi-select** keys and style/move/delete them together
+- **Trash strip** — deleted keys rest at the bottom until you restore them
+- **Presets** — save/load/delete whole keyboard setups (saving never touches your current layout)
+- **Background image** with adjustable blur, keyboard transparency, extra bottom padding
 
-### Feedback settings (persisted on-device)
-- Key sound with **5 premium synthesized sounds** (Tap · Pop · Click · Wood · Bubble)
-  and volume control
-- Vibration with strength control
+### ⌨️ Typing
+- Smart shift (auto-capitalization, double-tap ⇧ for caps lock)
+- **10 premium synthesized key sounds** (Tap · Pop · Click · Wood · Bubble · Thock · Snap · Mellow · Crystal · Feather) with smooth attack/fade — no harsh chirps — plus a **custom sound** slot (pitch + length)
+- Adjustable vibration strength
+- **Swipe-to-choose long-press popups**, customizable press **preview popup** (color, size, radius, linger) and **press zoom**
+- **Cursor & clipboard page**: copy / cut / paste / select-all, selection boundary keys (start ⇤ / end ⇥), arrow keys (hold = fast move), next-field finder
+- **Space trackpad** — long-press space and slide to move the cursor (optional Select mode), tap to exit
+- Emoji keyboard with categories + recents
+- Gesture & 3-button navigation bar safe — the keyboard always sits above the system bar
 
-### Keyboard Editor
-- **Sticky exact live preview** at the top — it never scrolls away and updates instantly
-- Add / edit / remove **custom keys** (any text, emoji, snippet…)
-- **Batch (bunch) editing** — long-press keys to select many, then change width or delete
-- **Move keys** left / right / up / down
-- Per-key **color**, **width**, and **long-press action** (repeat · type a shortcut)
-- Full **Android emoji picker** with recents
-- **Key height**, **key spacing**, **keyboard transparency**, **extra bottom padding**
-- **Keyboard background image** from your gallery
-- Save instantly, or **reset to default**
+### 🎨 App
+- Clean iOS-style grey UI, light/dark, edge-to-edge safe
+- Start page: setup only until CustomKey is active, then straight to the test field
+- Keyboard options (trackpad toggle) on the start page; everything else lives in the editor
 
-### Setup
-- Auto-detects whether CustomKey is **enabled** and currently **selected**
-- Shows only the pending step, and a green "active" card when you're done
+## Development
 
-### Privacy
-- **No internet permission. No analytics. No tracking.** Nothing you type ever leaves your device.
-- Layout & settings live in local SharedPreferences only.
+- **Stack**: Kotlin, framework APIs only — *no* AndroidX/appcompat/Gson; UI is 100 % programmatic
+- **Layout format**: JSON via `org.json` (see `Layout.kt`)
+- **Sounds**: synthesized 16-bit PCM WAV at runtime (`KeySounds.kt`), played through `SoundPool`
+- **Build**: Android Gradle Plugin 8.11.1, Kotlin 2.1.20, Gradle 8.13, Java 17, `minSdk 26` / `targetSdk 35`
+- **CI**: GitHub Actions (`.github/workflows/build.yml`) builds debug + release APKs and uploads them as artifacts. A demo release keystore is committed so CI can sign out of the box — replace it (env vars `CK_STORE_PASSWORD`, `CK_KEY_ALIAS`, `CK_KEY_PASSWORD`) for store uploads.
 
-## Install
-1. Download an APK from **Actions → latest run → Artifacts** (or build it yourself)
-2. Open CustomKey → **Enable CustomKey**
-3. Tap **Select CustomKey** and choose CustomKey
-4. Type anywhere 🎉
+## Releases
 
-## Build it yourself
-Requires JDK 17 and Gradle 8.13+:
-
-```bash
-gradle :app:assembleDebug        # debug APK
-gradle :app:assembleRelease      # signed release APK (uses release.keystore)
-```
-
-APKs land in `app/build/outputs/apk/`.
-
-CI builds both APKs on every push to `main` and on `v*` tags — see
-[Actions](../../actions).
-
-## Signing
-The repo includes a **demo keystore** (`release.keystore`, alias & password `customkey`)
-so CI can produce installable signed APKs immediately. Before publishing to any store,
-generate your own key:
-
-```bash
-keytool -genkeypair -v -keystore release.keystore -alias customkey \
-  -keyalg RSA -keysize 2048 -validity 10950
-```
-
-and set `CK_STORE_PASSWORD`, `CK_KEY_ALIAS`, `CK_KEY_PASSWORD` in your environment or
-CI secrets. **Keep your real keystore + passwords private.**
-
-## Tech notes
-- Kotlin, `InputMethodService`, no external libraries at all
-- Every screen, key, toggle and slider is drawn programmatically (iOS-style widgets)
-- Key sounds are synthesized WAVs; emoji set is embedded in code
-- Layouts are shared between the editor and the IME as JSON (`org.json`)
+Grab the latest signed APK from [GitHub Releases](https://github.com/lxzrvi/CustomKey/releases).
 
 ---
-Made by **lxzrvi** · [Report an issue](../../issues)
+
+Your keyboard, your rules.
