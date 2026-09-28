@@ -71,11 +71,11 @@ object Assets {
     }
 
     fun list(ctx: Context, kind: String): List<Asset> =
-        readAll(ctx).filter { it.kind == kind && File(path(ctx, it)).exists() }
+        readAll(ctx).filter { it.kind == kind && path(ctx, it).exists() }
 
     fun byId(ctx: Context, id: String?): Asset? {
         if (id.isNullOrEmpty()) return null
-        return readAll(ctx).firstOrNull { it.id == id && File(path(ctx, it)).exists() }
+        return readAll(ctx).firstOrNull { it.id == id && path(ctx, it).exists() }
     }
 
     fun path(ctx: Context, asset: Asset): File = File(File(ctx.filesDir, "assets"), asset.file)

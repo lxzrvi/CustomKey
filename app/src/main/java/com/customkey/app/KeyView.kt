@@ -184,7 +184,7 @@ class KeyView(
         textPaint.letterSpacing = (visual.letterSpacing ?: 0) / 100f
         // text opacity (independent of key opacity)
         visual.textOpacityPercent?.let {
-            textPaint.alpha = (Color.alpha(textPaint.color) * it.coerceIn(0, 100) / 100f)
+            textPaint.alpha = (Color.alpha(textPaint.color) * it.coerceIn(0, 100) / 100f).toInt()
         }
         // text shadow
         if (visual.textShadow) {

@@ -1131,7 +1131,7 @@ class EditorActivity : Activity(), KeyView.Listener {
             setPadding(dp(11), dp(9), dp(11), dp(9))
             background = Ui.rounded(this@EditorActivity, palette.chipCustom, 14)
             setOnClickListener { importAsset(kind) }
-            val img = ImageView(this).apply {
+            val img = ImageView(this@EditorActivity).apply {
                 setImageResource(R.drawable.ic_add)
                 drawable?.setTint(palette.accent)
             }
@@ -2327,7 +2327,7 @@ class EditorActivity : Activity(), KeyView.Listener {
                     if (Prefs.soundEnabled(this@EditorActivity)) sampleSound(KeySounds.STYLE_CUSTOM)
                     restyleStyleChips()
                 }
-                val img = ImageView(this).apply {
+                val img = ImageView(this@EditorActivity).apply {
                     setImageResource(R.drawable.ic_add)
                     drawable?.setTint(if (customSelected) palette.accentText else palette.text)
                 }
@@ -2503,13 +2503,14 @@ class EditorActivity : Activity(), KeyView.Listener {
 
     private fun previewVibration() {
         try {
-            val vibrator: Vibrator? =
+            val vibrator = (
                 if (Build.VERSION.SDK_INT >= 31) {
                     getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
                 } else {
                     @Suppress("DEPRECATION")
                     getSystemService(Vibrator::class.java)
-                } ?: return
+                }
+                ) ?: return
             val strength = Prefs.vibrationStrength(this)
             val ms = Prefs.vibrationDurationMs(this).coerceIn(10, 100).toLong()
             if (vibrator.hasAmplitudeControl()) {
@@ -3115,7 +3116,7 @@ class EditorActivity : Activity(), KeyView.Listener {
             setPadding(dp(12), dp(10), dp(12), dp(10))
             background = Ui.rounded(this@EditorActivity, palette.accent, 14)
             setOnClickListener { showNewPresetDialog() }
-            val img = ImageView(this).apply {
+            val img = ImageView(this@EditorActivity).apply {
                 setImageResource(R.drawable.ic_add)
                 drawable?.setTint(palette.accentText)
             }
