@@ -179,7 +179,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             if (resId <= 0) return 0
             val navH = resources.getDimensionPixelSize(resId)
             if (navH <= 0) return 0
-            if (decorBottom >= realBounds.bottom() - navH / 2) navH else 0
+            if (decorBottom >= realBounds.bottom - navH / 2) navH else 0
         } catch (_: Exception) {
             0
         }
