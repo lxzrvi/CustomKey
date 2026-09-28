@@ -37,11 +37,14 @@ enum class KeyType {
 /**
  * Per-key visual overrides from the Keyboard Editor.
  * Every field is optional — null means "use the theme default".
+ * Batch edits only copy the properties the user explicitly changed.
  */
 data class KeyVisual(
+    // ---- base style (v1.3) ----
     val cornerRadiusDp: Int? = null,
     val opacityPercent: Int? = null,
     val borderColor: Int? = null,
+    /** Border thickness in dp (null = default 1). */
     val borderWidthDp: Int? = null,
     /** 1 top · 2 right · 4 bottom · 8 left · 15 = all */
     val borderSides: Int? = null,
@@ -55,7 +58,61 @@ data class KeyVisual(
     val bold: Boolean? = null,
     val italic: Boolean? = null,
     /** 0 center · 1 top · 2 bottom · 3 left · 4 right */
-    val textPosition: Int? = null
+    val textPosition: Int? = null,
+
+    // ---- background (v1.4) ----
+    /** Linear gradient from the key color to [gradientColor]. */
+    val gradient: Boolean = false,
+    val gradientColor: Int? = null,
+    val gradientAngleDeg: Int = 0,
+    /** Imported image asset id used as the key background. */
+    val imageId: String? = null,
+    /** Image zoom around the center (50 – 300 %). */
+    val imageScalePercent: Int = 100,
+    /** Image opacity over the key color (0 – 100 %). */
+    val imageAlphaPercent: Int = 100,
+    val imageBlurDp: Int = 0,
+
+    // ---- shape effects (v1.4) ----
+    val glow: Boolean = false,
+    val glowColor: Int? = null,
+    val glowBlurDp: Int = 8,
+    val innerShadow: Boolean = false,
+
+    // ---- text extras (v1.4) ----
+    /** Imported font asset id for this key. */
+    val fontId: String? = null,
+    /** Letter spacing in 1/100 em (e.g. 5 = 0.05 em). */
+    val letterSpacing: Int? = null,
+    val textRotationDeg: Int? = null,
+    val textShadow: Boolean = false,
+    val textShadowColor: Int? = null,
+    val textShadowBlurDp: Int = 2,
+    val textShadowDx: Int = 1,
+    val textShadowDy: Int = 1,
+    val textOpacityPercent: Int? = null,
+
+    // ---- size & position (v1.4) ----
+    /** Whole-key rotation in degrees. */
+    val rotationDeg: Int? = null,
+    /** Whole-key scale (50 – 150 %). */
+    val scalePercent: Int? = null,
+    /** Extra horizontal text inset (dp). */
+    val paddingH: Int? = null,
+    /** Extra vertical text inset (dp). */
+    val paddingV: Int? = null,
+
+    // ---- feedback (v1.4) ----
+    /** Per-key sound style; null = follow the global setting. */
+    val soundStyle: Int? = null,
+    /** Imported sound asset id; overrides [soundStyle] when set. */
+    val soundAssetId: String? = null,
+    /** Per-key vibration strength %; null = follow the global setting. */
+    val vibrationPercent: Int? = null,
+
+    // ---- pressed state (v1.4) ----
+    val pressedColor: Int? = null,
+    val pressedScalePercent: Int? = null
 )
 
 data class KeyDef(
@@ -152,39 +209,129 @@ object Layouts {
 
     // ---------------- JSON ----------------
 
+    private fun JSONObject.putOpt(key: String, value: Int?): JSONObject {
+        if (value != null) put(key, value) else put(key, -1)
+        return this
+    }
+
+    private fun JSONObject.putOptBool(key: String, value: Boolean?, fallback: Boolean = false): JSONObject {
+        if (value != null) put(key, value) else put(key, fallback)
+        return this
+    }
+
+    private fun JSONObject.putOptLong(key: String, value: Int?): JSONObject {
+        if (value != null) put(key, value.toLong()) else put(key, -1L)
+        return this
+    }
+
+    private fun JSONObject.getIntOpt(key: String): Int? {
+        val v = optInt(key, -1)
+        return if (v < 0) null else v
+    }
+
+    private fun JSONObject.getLongColor(key: String): Int? {
+        val v = optLong(key, -1L)
+        return if (v < 0) null else v.toInt()
+    }
+
     fun visualToJson(v: KeyVisual): JSONObject = JSONObject()
-        .put("rad", v.cornerRadiusDp ?: -1)
-        .put("op", v.opacityPercent ?: -1)
-        .put("bc", v.borderColor?.toLong() ?: -1L)
-        .put("bw", v.borderWidthDp ?: -1)
-        .put("bs", v.borderSides ?: -1)
+        // base
+        .putOpt("rad", v.cornerRadiusDp)
+        .putOpt("op", v.opacityPercent)
+        .putOptLong("bc", v.borderColor)
+        .putOpt("bw", v.borderWidthDp)
+        .putOpt("bs", v.borderSides)
         .put("sh", v.shadow)
         .put("shs", v.shadowSoft)
         .put("sha", v.shadowAngleDeg)
         .put("shd", v.shadowDistanceDp)
         .put("shb", v.shadowBlurDp)
-        .put("tc", v.textColor?.toLong() ?: -1L)
-        .put("ts", v.textSizeSp ?: -1)
-        .put("b", v.bold ?: false)
-        .put("bi", v.italic ?: false)
-        .put("bp", v.textPosition ?: -1)
+        .putOptLong("tc", v.textColor)
+        .putOpt("ts", v.textSizeSp)
+        .putOptBool("b", v.bold)
+        .putOptBool("bi", v.italic)
+        .putOpt("bp", v.textPosition)
+        // background
+        .put("gr", v.gradient)
+        .putOptLong("grc", v.gradientColor)
+        .put("gra", v.gradientAngleDeg)
+        .put("gid", v.imageId ?: "")
+        .put("gsc", v.imageScalePercent)
+        .put("gal", v.imageAlphaPercent)
+        .put("gbl", v.imageBlurDp)
+        // shape
+        .put("glo", v.glow)
+        .putOptLong("glc", v.glowColor)
+        .put("glb", v.glowBlurDp)
+        .put("ins", v.innerShadow)
+        // text
+        .put("fnt", v.fontId ?: "")
+        .putOpt("ls", v.letterSpacing)
+        .putOpt("trx", v.textRotationDeg)
+        .put("tsw", v.textShadow)
+        .putOptLong("tsc", v.textShadowColor)
+        .put("tsb", v.textShadowBlurDp)
+        .put("tsx", v.textShadowDx)
+        .put("tsy", v.textShadowDy)
+        .putOpt("top", v.textOpacityPercent)
+        // size & position
+        .putOpt("rot", v.rotationDeg)
+        .putOpt("scl", v.scalePercent)
+        .putOpt("kph", v.paddingH)
+        .putOpt("kpv", v.paddingV)
+        // feedback
+        .putOpt("snd", v.soundStyle)
+        .put("sna", v.soundAssetId ?: "")
+        .putOpt("vib", v.vibrationPercent)
+        // pressed
+        .putOptLong("pcl", v.pressedColor)
+        .putOpt("psc", v.pressedScalePercent)
 
     fun visualFromJson(o: JSONObject): KeyVisual = KeyVisual(
-        cornerRadiusDp = o.optInt("rad", -1).let { if (it < 0) null else it },
-        opacityPercent = o.optInt("op", -1).let { if (it < 0) null else it },
-        borderColor = o.optLong("bc", -1L).let { if (it < 0) null else it.toInt() },
-        borderWidthDp = o.optInt("bw", -1).let { if (it < 0) null else it },
-        borderSides = o.optInt("bs", -1).let { if (it < 0) null else it },
+        cornerRadiusDp = o.getIntOpt("rad"),
+        opacityPercent = o.getIntOpt("op"),
+        borderColor = o.getLongColor("bc"),
+        borderWidthDp = o.getIntOpt("bw"),
+        borderSides = o.getIntOpt("bs"),
         shadow = o.optBoolean("sh", false),
         shadowSoft = o.optBoolean("shs", true),
         shadowAngleDeg = o.optInt("sha", 315),
         shadowDistanceDp = o.optInt("shd", 3),
         shadowBlurDp = o.optInt("shb", 4),
-        textColor = o.optLong("tc", -1L).let { if (it < 0) null else it.toInt() },
-        textSizeSp = o.optInt("ts", -1).let { if (it < 0) null else it },
+        textColor = o.getLongColor("tc"),
+        textSizeSp = o.getIntOpt("ts"),
         bold = if (o.has("b")) o.getBoolean("b") else null,
         italic = if (o.has("bi")) o.getBoolean("bi") else null,
-        textPosition = o.optInt("bp", -1).let { if (it < 0) null else it }
+        textPosition = o.getIntOpt("bp"),
+        gradient = o.optBoolean("gr", false),
+        gradientColor = o.getLongColor("grc"),
+        gradientAngleDeg = o.optInt("gra", 0),
+        imageId = o.optString("gid", "").ifEmpty { null },
+        imageScalePercent = o.optInt("gsc", 100),
+        imageAlphaPercent = o.optInt("gal", 100),
+        imageBlurDp = o.optInt("gbl", 0),
+        glow = o.optBoolean("glo", false),
+        glowColor = o.getLongColor("glc"),
+        glowBlurDp = o.optInt("glb", 8),
+        innerShadow = o.optBoolean("ins", false),
+        fontId = o.optString("fnt", "").ifEmpty { null },
+        letterSpacing = o.getIntOpt("ls"),
+        textRotationDeg = o.getIntOpt("trx"),
+        textShadow = o.optBoolean("tsw", false),
+        textShadowColor = o.getLongColor("tsc"),
+        textShadowBlurDp = o.optInt("tsb", 2),
+        textShadowDx = o.optInt("tsx", 1),
+        textShadowDy = o.optInt("tsy", 1),
+        textOpacityPercent = o.getIntOpt("top"),
+        rotationDeg = o.getIntOpt("rot"),
+        scalePercent = o.getIntOpt("scl"),
+        paddingH = o.getIntOpt("kph"),
+        paddingV = o.getIntOpt("kpv"),
+        soundStyle = o.getIntOpt("snd"),
+        soundAssetId = o.optString("sna", "").ifEmpty { null },
+        vibrationPercent = o.getIntOpt("vib"),
+        pressedColor = o.getLongColor("pcl"),
+        pressedScalePercent = o.getIntOpt("psc")
     )
 
     fun toJson(def: KeyboardDef): String {
@@ -249,13 +396,7 @@ object Layouts {
         }
     }
 
-    /** Essential keys every usable layout must still contain. */
-    fun missingEssentials(def: KeyboardDef): List<KeyType> {
-        val present = HashSet<KeyType>()
-        def.rows.forEach { row -> row.keys.forEach { present.add(it.type) } }
-        val essentials = listOf(
-            KeyType.SHIFT, KeyType.DELETE, KeyType.SPACE, KeyType.ENTER, KeyType.TO_SYMBOLS
-        )
-        return essentials.filter { !present.contains(it) }
-    }
+    /** Deep copy via JSON round-trip (used for move-mode snapshots). */
+    fun copyOf(def: KeyboardDef): KeyboardDef =
+        withIds(fromJson(toJson(def)) ?: defaultLetters())
 }

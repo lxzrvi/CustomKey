@@ -98,7 +98,6 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     override fun onCreateInputView(): View {
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(3), dp(4), dp(3), dp(3))
         }
         overlayLayer = FrameLayout(this).apply { visibility = View.GONE }
         root = FrameLayout(this).apply {
@@ -189,9 +188,16 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         if (!::root.isInitialized) return
         val navBottom = if (reported > 0) reported else navBarHeuristic()
         lastNavBottom = navBottom
+        applyContentPadding(navBottom)
+    }
+
+    /** Horizontal/vertical padding + bottom inset, all user-configurable. */
+    private fun applyContentPadding(navBottom: Int) {
+        val padH = dp(Prefs.contentPaddingHDp(this).coerceIn(0, 24))
+        val padV = dp(Prefs.contentPaddingVDp(this).coerceIn(0, 24))
         content.setPadding(
-            dp(3), dp(4), dp(3),
-            navBottom + dp(3) + dp(Prefs.extraBottomDp(this).coerceIn(0, 20))
+            padH, padV, padH,
+            navBottom + padV + dp(Prefs.extraBottomDp(this).coerceIn(0, 20))
         )
     }
 
@@ -247,20 +253,23 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         exitTrackpad()
 
         val palette = KeyboardTheme.palette(this)
-        val bgDrawable = KeyboardTheme.backgroundDrawable(this)
-        if (bgDrawable != null) root.background = bgDrawable
-        else root.setBackgroundColor(palette.bg)
+        applyKeyboardBackground(palette)
 
-        content.setPadding(
-            dp(3), dp(4), dp(3),
-            lastNavBottom + dp(3) + dp(Prefs.extraBottomDp(this).coerceIn(0, 20))
-        )
+        applyContentPadding(lastNavBottom)
         content.removeAllViews()
+
+        // Optional customizable toolbar above the keys
+        if (Prefs.toolbarEnabled(this)) {
+            content.addView(buildToolbar())
+        }
 
         when (page) {
             Page.LETTERS -> {
                 val def = Layouts.current(this)
-                def.rows.forEach { row -> content.addView(buildRow(row.keys)) }
+                if (Prefs.numberRowEnabled(this)) {
+                    addStyledRow(content, buildRow(customRow("1234567890").keys))
+                }
+                def.rows.forEach { row -> addStyledRow(content, buildRow(row.keys)) }
             }
             Page.SYMBOLS -> buildSymbolsPage()
             Page.EXTRA -> buildExtraPage()
@@ -294,12 +303,131 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
+    /** Adds a key row with the configured width % and alignment. */
+    private fun addStyledRow(parent: LinearLayout, row: LinearLayout) {
+        val pct = Prefs.keyboardWidthPercent(this).coerceIn(60, 100)
+        val gravity = when (Prefs.rowAlignment(this)) {
+            0 -> Gravity.LEFT
+            2 -> Gravity.RIGHT
+            else -> Gravity.CENTER_HORIZONTAL
+        }
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        lp.gravity = gravity
+        parent.addView(row, lp)
+        if (pct < 100) {
+            row.post {
+                val targetW = (resources.displayMetrics.widthPixels * pct / 100f).toInt()
+                if (row.width != targetW) {
+                    row.layoutParams.width = targetW
+                    row.requestLayout()
+                }
+            }
+        }
+    }
+
+    /** Optional toolbar strip above the keys — fully customizable in the editor. */
+    private fun buildToolbar(): View {
+        val height = dp(Prefs.toolbarHeightDp(this).coerceIn(24, 64))
+        val iconColor = Prefs.toolbarIconColor(this)
+        val sizeSp = Prefs.toolbarIconSizeSp(this).coerceIn(9, 22).toFloat()
+        val palette = KeyboardTheme.palette(this)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val bg = Prefs.toolbarBgColor(this@CustomKeyService)
+            if (bg != 0) setBackgroundColor(bg)
+        }
+
+        Prefs.toolbarButtons(this).filter { it.on }.forEach { btn ->
+            val action = toolbarAction(btn.id)
+            row.addView(
+                TextView(this).apply {
+                    text = action.first
+                    textSize = sizeSp
+                    typeface = Ui.fontMedium(this@CustomKeyService)
+                    setTextColor(if (iconColor != 0) iconColor else palette.style.textColor)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(10), 0, dp(10), 0)
+                    contentDescription = action.second
+                    setOnClickListener { action.third() }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, height)
+            )
+        }
+        return row
+    }
+
+    /** id → (label, description, action) */
+    private fun toolbarAction(id: String): Triple<String, String, () -> Unit> = when (id) {
+        "cl" -> Triple("←", "Cursor left") { tapKey(KeyEvent.KEYCODE_DPAD_LEFT) }
+        "cr" -> Triple("→", "Cursor right") { tapKey(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        "cu" -> Triple("↑", "Cursor up") { tapKey(KeyEvent.KEYCODE_DPAD_UP) }
+        "cd" -> Triple("↓", "Cursor down") { tapKey(KeyEvent.KEYCODE_DPAD_DOWN) }
+        "copy" -> Triple("Copy", "Copy") { currentInputConnection?.performContextMenuAction(android.R.id.copy) }
+        "cut" -> Triple("Cut", "Cut") { currentInputConnection?.performContextMenuAction(android.R.id.cut) }
+        "paste" -> Triple("Paste", "Paste") { currentInputConnection?.performContextMenuAction(android.R.id.paste) }
+        "all" -> Triple("All", "Select all") { currentInputConnection?.performContextMenuAction(android.R.id.selectAll) }
+        "emoji" -> Triple("☺", "Emoji") { page = Page.EMOJI; buildKeyboard() }
+        "next" -> Triple("Next", "Next field") { performNextField() }
+        else -> Triple("▾", "Hide keyboard") { requestHideSelf(0) }
+    }
+
+    /** Solid / gradient / bordered keyboard surface (separate from key colors). */
+    private fun applyKeyboardBackground(palette: KbPalette) {
+        val bgDrawable = KeyboardTheme.backgroundDrawable(this)
+        if (bgDrawable != null) {
+            root.background = bgDrawable
+            return
+        }
+        val color = Prefs.kbBgColor(this)
+        val gradient = Prefs.kbGradient(this)
+        val c2 = Prefs.kbGradientColor2(this)
+        val border = Prefs.kbBorderColor(this)
+        val bw = Prefs.kbBorderWidthDp(this)
+        val radius = Prefs.kbRadiusDp(this)
+        if (color == 0 && !gradient && border == 0 && radius == 0) {
+            root.setBackgroundColor(palette.bg)
+            return
+        }
+        val base = if (color != 0) color else palette.bg
+        root.background = android.graphics.drawable.GradientDrawable().apply {
+            if (gradient) {
+                orientation = gradientOrientation(Prefs.kbGradientAngle(this@CustomKeyService))
+                colors = intArrayOf(palette.withAlpha(base), palette.withAlpha(c2))
+            } else {
+                setColor(palette.withAlpha(base))
+            }
+            if (bw > 0 && border != 0) setStroke(dp(bw), border)
+            if (radius > 0) cornerRadius = dp(radius).toFloat()
+        }
+    }
+
+    private fun gradientOrientation(angle: Int): android.graphics.drawable.GradientDrawable.Orientation {
+        val octant = ((angle % 360 + 360) % 360) / 45
+        return when (octant) {
+            0 -> android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT
+            1 -> android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+            2 -> android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
+            3 -> android.graphics.drawable.GradientDrawable.Orientation.TR_BL
+            4 -> android.graphics.drawable.GradientDrawable.Orientation.RIGHT_LEFT
+            5 -> android.graphics.drawable.GradientDrawable.Orientation.BR_TL
+            6 -> android.graphics.drawable.GradientDrawable.Orientation.BOTTOM_TOP
+            else -> android.graphics.drawable.GradientDrawable.Orientation.BL_TR
+        }
+    }
+
     private fun buildRow(keys: List<KeyDef>): LinearLayout {
         val palette = KeyboardTheme.palette(this)
         val style = palette.style
         val heightPx = dp(Prefs.keyHeightDp(this).coerceIn(40, 62))
-        val gapPx = dp(Prefs.keyGapDp(this).coerceIn(2, 8))
+        val gapPx = dp(Prefs.keyGapDp(this).coerceIn(0, 8))
+        val rowGapPx = dp(Prefs.rowGapDp(this).coerceIn(0, 14))
         val halfGapPx = (gapPx / 2f).toInt().coerceAtLeast(0)
+        val halfRowGapPx = (rowGapPx / 2f).toInt().coerceAtLeast(0)
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -335,7 +463,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             view.contentDescription = contentDescriptionFor(keyDef)
 
             val lp = LinearLayout.LayoutParams(0, heightPx, keyDef.weight)
-            lp.setMargins(halfGapPx, halfGapPx, halfGapPx, halfGapPx)
+            lp.setMargins(halfGapPx, halfRowGapPx, halfGapPx, halfRowGapPx)
             row.addView(view, lp)
         }
         return row
@@ -409,7 +537,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             ),
             bottomRow()
         )
-        rows.forEach { row -> content.addView(buildRow(row.keys)) }
+        rows.forEach { row -> addStyledRow(content, buildRow(row.keys)) }
     }
 
     private fun buildExtraPage() {
@@ -431,7 +559,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             ),
             bottomRow()
         )
-        rows.forEach { row -> content.addView(buildRow(row.keys)) }
+        rows.forEach { row -> addStyledRow(content, buildRow(row.keys)) }
     }
 
     private fun customRow(chars: String): RowDef =
@@ -490,7 +618,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                 )
             )
         )
-        rows.forEach { row -> content.addView(buildRow(row.keys)) }
+        rows.forEach { row -> addStyledRow(content, buildRow(row.keys)) }
     }
 
     // ---------------- emoji page ----------------
@@ -552,14 +680,17 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             setPadding(dp(6), dp(2), dp(6), dp(2))
         }
         val items = categories[emojiCategory]
-        val perRow = 8
+        val perRow = Prefs.emojiColumns(this).coerceIn(4, 12)
+        val rowH = dp(Prefs.emojiRowHeightDp(this).coerceIn(30, 64))
+        val cellSpacing = dp(Prefs.emojiSpacingDp(this).coerceIn(0, 12))
+        val emojiSp = Prefs.emojiSizeSp(this).coerceIn(12, 40).toFloat()
         var i = 0
         while (i < items.size) {
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (j in 0 until perRow) {
                 val index = i + j
                 val cell = TextView(this).apply {
-                    textSize = 24f
+                    textSize = emojiSp
                     gravity = Gravity.CENTER
                     if (index < items.size) {
                         val emoji = items[index]
@@ -572,12 +703,12 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                         }
                     }
                 }
-                row.addView(cell, LinearLayout.LayoutParams(0, dp(42), 1f))
+                val clp = LinearLayout.LayoutParams(0, rowH, 1f)
+                clp.setMargins(cellSpacing / 2, cellSpacing / 2, cellSpacing / 2, cellSpacing / 2)
+                row.addView(cell, clp)
             }
-            grid.addView(
-                row,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42))
-            )
+            val rlp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, rowH)
+            grid.addView(row, rlp)
             i += perRow
         }
         gridScroll.addView(
@@ -589,10 +720,14 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         )
         content.addView(
             gridScroll,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(158))
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (rowH * 3.6f).toInt().coerceAtLeast(dp(120))
+            )
         )
 
-        content.addView(
+        addStyledRow(
+            content,
             buildRow(
                 listOf(
                     KeyDef(KeyType.TO_LETTERS, "ABC", "", 1.4f),
@@ -606,7 +741,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     // ---------------- key actions ----------------
 
     override fun onKeyTap(view: KeyView, key: KeyDef) {
-        feedback()
+        feedback(key)
         when (key.type) {
             KeyType.LETTER -> typeLetter(key)
             KeyType.CUSTOM -> {
@@ -681,21 +816,21 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     override fun onKeyLongPress(view: KeyView, key: KeyDef) {
         // Space long-press → cursor trackpad.
         if (key.type == KeyType.SPACE && Prefs.trackpadEnabled(this)) {
-            feedback()
+            feedback(key)
             enterTrackpad()
             return
         }
 
         // Custom keys with a configured long-press shortcut (no alternates set).
         if (key.type == KeyType.CUSTOM && key.longPressOutput.isNotEmpty() && key.alternates.isEmpty()) {
-            feedback()
+            feedback(key)
             typeText(key.longPressOutput)
             return
         }
 
         val alternates = alternatesFor(key)
         if (alternates.isEmpty()) return
-        feedback()
+        feedback(key)
         showAlternatesOverlay(view, alternates)
     }
 
@@ -927,8 +1062,59 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             text = "Slide to move the cursor · tap to exit"
             textSize = 12f
             setTextColor(if (dark) 0xFFB0B0B0.toInt() else 0xFF6B6B6B.toInt())
-            setPadding(0, dp(4), 0, dp(10))
+            setPadding(0, dp(4), 0, dp(8))
         })
+
+        // ---- cursor control buttons ----
+        val chipBg = if (dark) 0xFF3A3A3A.toInt() else 0xFFDEDEDE.toInt()
+
+        fun cursorChip(label: String, description: String, action: () -> Unit): TextView =
+            TextView(this).apply {
+                text = label
+                textSize = 15f
+                typeface = Ui.fontMedium(this@CustomKeyService)
+                gravity = Gravity.CENTER
+                setTextColor(if (dark) Color.WHITE else Color.BLACK)
+                background = roundedDrawable(chipBg, dp(10))
+                contentDescription = description
+                setOnClickListener { action() }
+            }
+
+        val arrowsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(6))
+        }
+        listOf(
+            "◀" to ("Cursor left" to { tapKey(KeyEvent.KEYCODE_DPAD_LEFT) }),
+            "▲" to ("Cursor up" to { tapKey(KeyEvent.KEYCODE_DPAD_UP) }),
+            "▼" to ("Cursor down" to { tapKey(KeyEvent.KEYCODE_DPAD_DOWN) }),
+            "▶" to ("Cursor right" to { tapKey(KeyEvent.KEYCODE_DPAD_RIGHT) })
+        ).forEach { (label, pair) ->
+            arrowsRow.addView(
+                cursorChip(label, pair.first, pair.second),
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
+            )
+        }
+        sheet.addView(arrowsRow)
+
+        val selectionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(6))
+        }
+        listOf(
+            "⇤" to ("Selection start left" to { moveSelectionBoundary(startSide = true, delta = -1) }),
+            "⇥" to ("Selection end right" to { moveSelectionBoundary(startSide = false, delta = 1) }),
+            "◧" to ("Select left" to { tapKey(KeyEvent.KEYCODE_DPAD_LEFT, true) }),
+            "◨" to ("Select right" to { tapKey(KeyEvent.KEYCODE_DPAD_RIGHT, true) })
+        ).forEach { (label, pair) ->
+            selectionRow.addView(
+                cursorChip(label, pair.first, pair.second),
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
+            )
+        }
+        sheet.addView(selectionRow)
 
         // Select toggle: after this, slides EXTEND the selection.
         val selectChip = TextView(this).apply {
@@ -1208,21 +1394,37 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     // ---------------- sound / vibration ----------------
 
-    private fun feedback() {
+    private fun feedback(key: KeyDef? = null) {
+        val style = key?.style
         if (Prefs.soundEnabled(this)) {
             try {
                 if (sounds == null) sounds = KeySounds(this)
-                sounds?.play(Prefs.soundStyle(this), Prefs.soundVolume(this))
+                val assetId = style?.soundAssetId
+                if (assetId != null) {
+                    val asset = Assets.byId(this, assetId)
+                    if (asset != null) {
+                        sounds?.playAsset(Assets.path(this, asset).absolutePath, Prefs.soundVolume(this))
+                    } else {
+                        sounds?.play(Prefs.soundStyle(this), Prefs.soundVolume(this))
+                    }
+                } else {
+                    val keyStyle = style?.soundStyle
+                    if (keyStyle != null && keyStyle in 0..10) {
+                        sounds?.play(keyStyle, Prefs.soundVolume(this))
+                    } else {
+                        sounds?.play(Prefs.soundStyle(this), Prefs.soundVolume(this))
+                    }
+                }
             } catch (_: Exception) {
             }
         }
-        vibrate()
+        vibrate(style?.vibrationPercent)
     }
 
-    /** Fixed vibration: correct vibrator on Android 12+, amplitude support check. */
-    private fun vibrate() {
+    /** Fixed vibration: correct vibrator on Android 12+, per-key strength override. */
+    private fun vibrate(strengthOverride: Int? = null) {
         if (!Prefs.vibrationEnabled(this)) return
-        val strength = Prefs.vibrationStrength(this)
+        val strength = strengthOverride ?: Prefs.vibrationStrength(this)
         if (strength <= 0) return
         try {
             val vibrator: Vibrator = (
@@ -1233,7 +1435,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
                     getSystemService(Vibrator::class.java)
                 }
                 ) ?: return
-            val ms = 30L
+            val ms = Prefs.vibrationDurationMs(this).coerceIn(10, 100).toLong()
             if (vibrator.hasAmplitudeControl()) {
                 val amplitude = (strength * 255 / 100).coerceIn(60, 255)
                 vibrator.vibrate(VibrationEffect.createOneShot(ms, amplitude))

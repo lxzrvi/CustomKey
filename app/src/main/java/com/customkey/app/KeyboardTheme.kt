@@ -100,7 +100,7 @@ object KeyboardTheme {
             val raw = BitmapFactory.decodeFile(path) ?: return null
             val blur = Prefs.bgBlur(context)
             val bitmap = if (blur > 0) blurBitmap(raw, blur) else raw
-            KeyboardBgDrawable(bitmap, Ui.isDark(context))
+            KeyboardBgDrawable(bitmap, Ui.isDark(context), Prefs.kbBgOverlayPercent(context))
         } catch (_: Exception) {
             null
         }
@@ -109,8 +109,9 @@ object KeyboardTheme {
     /**
      * Cheap, dependency-free blur: heavy downscale + bilinear upscale, repeated
      * for very strong blur. Looks like a gaussian at keyboard resolutions.
+     * Also used for per-key image backgrounds.
      */
-    private fun blurBitmap(source: Bitmap, radius: Int): Bitmap {
+    fun blurBitmap(source: Bitmap, radius: Int): Bitmap {
         return try {
             val strength = radius.coerceIn(1, 25)
             // downscale factor grows with blur strength
@@ -134,7 +135,8 @@ object KeyboardTheme {
 /** Center-crops a bitmap to any bounds and adds a light/dark readability scrim. */
 class KeyboardBgDrawable(
     private val bitmap: Bitmap,
-    private val dark: Boolean
+    private val dark: Boolean,
+    private val overlayPercent: Int = 55
 ) : Drawable() {
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -152,10 +154,11 @@ class KeyboardBgDrawable(
         rect.set((w - dw) / 2f, (h - dh) / 2f, (w + dw) / 2f, (h + dh) / 2f)
         canvas.drawBitmap(bitmap, null, rect, paint)
 
+        val strength = overlayPercent.coerceIn(0, 100) / 100f
         scrimPaint.color = if (dark) {
-            Color.argb(150, 0, 0, 0)
+            Color.argb((170 * strength).toInt(), 0, 0, 0)
         } else {
-            Color.argb(110, 255, 255, 255)
+            Color.argb((130 * strength).toInt(), 255, 255, 255)
         }
         canvas.drawRect(bounds, scrimPaint)
     }

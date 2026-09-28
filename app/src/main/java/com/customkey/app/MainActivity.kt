@@ -259,13 +259,14 @@ class MainActivity : android.app.Activity() {
         else @Suppress("DEPRECATION") info.versionCode.toLong()
         "${info.versionName} ($code)"
     } catch (_: Exception) {
-        "1.3"
+        "1.4"
     }
 
     private fun showVersionDialog() {
         val dialog = Ui.CustomDialog(this, palette, "Version history")
         dialog.body.addView(TextView(this).apply {
             text = """
+                1.4 — Keyboard Editor Pro: 9-tab live editor, multi-select batch edit, gradients, images, fonts, glow & inner shadow, text effects, custom key sounds, per-key vibration, optional toolbar, emoji grid controls.
                 1.3 — Key editor pro: styles, shadows, drag-move, presets, trackpad, 10 premium sounds, clipboard & cursor keys.
 
                 1.2 — Emoji page & picker, long-press symbols, key colors, background image, transparency, sticky preview, batch edit.

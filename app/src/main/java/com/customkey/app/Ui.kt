@@ -55,6 +55,46 @@ object Ui {
 
     fun palette(context: Context): Palette = Palette(isDark(context))
 
+    // ---------------- Inter typography (used throughout the editor) ----------------
+
+    private var interRegular: Typeface? = null
+    private var interMedium: Typeface? = null
+    private var interSemibold: Typeface? = null
+
+    /** Inter Regular — the editor's default typeface. */
+    fun font(context: Context): Typeface {
+        interRegular?.let { return it }
+        return try {
+            val f = context.resources.getFont(R.font.inter_400)
+            interRegular = f
+            f
+        } catch (_: Exception) {
+            Typeface.DEFAULT
+        }
+    }
+
+    fun fontMedium(context: Context): Typeface {
+        interMedium?.let { return it }
+        return try {
+            val f = context.resources.getFont(R.font.inter_500)
+            interMedium = f
+            f
+        } catch (_: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
+    }
+
+    fun fontSemibold(context: Context): Typeface {
+        interSemibold?.let { return it }
+        return try {
+            val f = context.resources.getFont(R.font.inter_600)
+            interSemibold = f
+            f
+        } catch (_: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
+    }
+
     fun isDark(context: Context): Boolean =
         (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
@@ -146,6 +186,7 @@ object Ui {
             text = title
             textSize = 13f
             letterSpacing = 0.08f
+            typeface = fontSemibold(context)
             setTextColor(p.secondary)
             setPadding(dp(context, 4), dp(context, 26), dp(context, 4), dp(context, 10))
         }
@@ -185,6 +226,7 @@ object Ui {
         val button = Button(context).apply {
             text = title
             textSize = 16f
+            typeface = fontMedium(context)
             isAllCaps = false
             minHeight = 0
             minWidth = 0
@@ -223,6 +265,7 @@ object Ui {
         TextView(context).apply {
             text = title
             textSize = 14f
+            typeface = fontMedium(context)
             gravity = Gravity.CENTER
             setTextColor(if (danger) p.danger else p.text)
             background = rounded(context, if (danger) Color.TRANSPARENT else p.tinted, 14, if (danger) p.danger else null)
@@ -249,6 +292,7 @@ object Ui {
         val label = TextView(context).apply {
             text = title
             textSize = 16f
+            typeface = font(context)
             setTextColor(p.text)
         }
         row.addView(
@@ -277,8 +321,10 @@ object Ui {
         value: Int,
         enabled: Boolean,
         format: (Int) -> String,
-        onChange: (Int) -> Unit
+        onChange: (Int) -> Unit,
+        default: Int? = null
     ): IosSlider {
+        var sliderRef: IosSlider? = null
         val labelRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -287,6 +333,7 @@ object Ui {
         val titleView = TextView(context).apply {
             text = title
             textSize = 15f
+            typeface = font(context)
             setTextColor(p.text)
         }
         labelRow.addView(
@@ -296,9 +343,25 @@ object Ui {
         val valueView = TextView(context).apply {
             text = format(value)
             textSize = 15f
+            typeface = fontMedium(context)
             setTextColor(p.secondary)
         }
         labelRow.addView(valueView)
+        if (default != null) {
+            val reset = TextView(context).apply {
+                text = "↺"
+                textSize = 15f
+                typeface = fontMedium(context)
+                setTextColor(p.secondary)
+                setPadding(dp(context, 8), 0, 0, 0)
+                contentDescription = "Reset $title"
+                setOnClickListener {
+                    valueView.text = format(default)
+                    sliderRef?.setValue(default, notify = true)
+                }
+            }
+            labelRow.addView(reset)
+        }
         parent.addView(labelRow)
 
         val slider = IosSlider(context).apply {
@@ -315,6 +378,7 @@ object Ui {
                 onChange(v)
             }
         }
+        sliderRef = slider
         parent.addView(
             slider,
             LinearLayout.LayoutParams(
@@ -329,6 +393,7 @@ object Ui {
         EditText(context).apply {
             this.hint = hint
             textSize = 16f
+            typeface = font(context)
             setTextColor(p.text)
             setHintTextColor(p.secondary)
             background = rounded(context, p.inputBg, 12)

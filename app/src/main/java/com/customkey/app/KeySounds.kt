@@ -42,6 +42,9 @@ class KeySounds(private val context: Context) {
     private val soundIds = IntArray(NAMES.size + 1)
     private val loaded = HashSet<Int>()
 
+    // Imported sound files (custom assets), loaded lazily and cached by path.
+    private val assetSoundIds = HashMap<String, Int>()
+
     private fun ensureLoaded() {
         if (pool != null) return
         try {
@@ -92,10 +95,29 @@ class KeySounds(private val context: Context) {
         soundIds[STYLE_CUSTOM] = soundPool.load(customWavFile().absolutePath, 1)
     }
 
+    /** Plays an imported sound file (mp3/wav/ogg). Loads it on first use. */
+    fun playAsset(path: String, volumePercent: Int) {
+        if (volumePercent <= 0) return
+        ensureLoaded()
+        val soundPool = pool ?: return
+        val file = java.io.File(path)
+        if (!file.exists()) return
+        val id = assetSoundIds[path] ?: run {
+            val newId = soundPool.load(path, 1)
+            assetSoundIds[path] = newId
+            newId
+        }
+        if (id > 0) {
+            val v = (volumePercent / 100f).coerceIn(0f, 1f)
+            soundPool.play(id, v, v, 1, 0, 1f)
+        }
+    }
+
     fun release() {
         pool?.release()
         pool = null
         loaded.clear()
+        assetSoundIds.clear()
     }
 
     // ---------------- synthesis ----------------

@@ -1,27 +1,30 @@
 package com.customkey.app
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
 /**
  * One rounded rectangular keyboard key with premium styling:
  * per-key corner radius / border (per side) / offset shadow (hard, soft or blurred),
- * text size · weight · italic · position, opacity, press-zoom animation,
- * long-press hint character and optional vector icon.
+ * gradient + image backgrounds, glow + inner shadow, full text styling
+ * (custom font, size, weight, italic, letter spacing, rotation, shadow, opacity,
+ * position), key rotation / scale / padding, press-zoom animation, per-key
+ * pressed color, long-press hint character and optional vector icon.
  */
 class KeyView(
     context: Context,
@@ -63,7 +66,7 @@ class KeyView(
 
     var listener: Listener? = null
 
-    /** Highlighted state (active shift / caps lock). */
+    /** Highlighted state (active shift / caps lock / editor selection). */
     var active = false
     var activeBg = 0xFF0A84FF.toInt()
     var activeTextColor = Color.WHITE
@@ -75,8 +78,14 @@ class KeyView(
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val rect = RectF()
     private val shadowRect = RectF()
+    private val clipPath = Path()
+    private var clipBitmap: Bitmap? = null
+    private var clipImageId: String? = null
 
     private var keyColor = Color.DKGRAY
     private var labelColor = Color.WHITE
@@ -94,7 +103,6 @@ class KeyView(
     private val longPressRunnable = Runnable {
         slideMode = true
         cancelRepeat()
-        performHapticLite()
         listener?.onKeyLongPress(this, key)
     }
 
@@ -110,6 +118,7 @@ class KeyView(
     fun updateKey(newKey: KeyDef) {
         key = newKey
         visual = newKey.style ?: KeyVisual()
+        if (clipImageId != visual.imageId) clipBitmap = null
         refreshLook()
     }
 
@@ -154,11 +163,17 @@ class KeyView(
 
         bgPaint.color = keyColor
         bgPaint.alpha = (Color.alpha(keyColor) * alpha).toInt().coerceIn(0, 255)
+        bgPaint.shader = null
 
-        // text
-        var face = Typeface.DEFAULT
-        val customFace = loadCustomFont(context)
-        if (customFace != null) face = customFace
+        // text font: per-key imported font → global custom font → default
+        var face: Typeface = Typeface.DEFAULT
+        val keyFont = Assets.typefaceById(context, visual.fontId)
+        if (keyFont != null) {
+            face = keyFont
+        } else {
+            val customFace = loadCustomFont(context)
+            if (customFace != null) face = customFace
+        }
         val bold = visual.bold ?: false
         val italic = visual.italic ?: false
         val styleBits = (if (bold) Typeface.BOLD else 0) or (if (italic) Typeface.ITALIC else 0)
@@ -166,6 +181,22 @@ class KeyView(
         textPaint.color = visual.textColor ?: labelColor
         textPaint.alpha = ((visual.textColor ?: labelColor).let { Color.alpha(it) } * alpha).toInt()
         textPaint.textSize = (visual.textSizeSp?.toFloat() ?: labelSizeSp) * scaledDensity
+        textPaint.letterSpacing = (visual.letterSpacing ?: 0) / 100f
+        // text opacity (independent of key opacity)
+        visual.textOpacityPercent?.let {
+            textPaint.alpha = (Color.alpha(textPaint.color) * it.coerceIn(0, 100) / 100f)
+        }
+        // text shadow
+        if (visual.textShadow) {
+            textPaint.setShadowLayer(
+                (visual.textShadowBlurDp * density).coerceAtLeast(0.1f),
+                visual.textShadowDx * density,
+                visual.textShadowDy * density,
+                visual.textShadowColor ?: Color.DKGRAY
+            )
+        } else {
+            textPaint.clearShadowLayer()
+        }
 
         // border
         val borderColor = visual.borderColor
@@ -175,35 +206,44 @@ class KeyView(
             borderPaint.strokeWidth = (visual.borderWidthDp ?: 1) * density
         }
 
-        // shadow
+        // drop shadow
         if (visual.shadow) {
             val angleRad = Math.toRadians(visual.shadowAngleDeg.toDouble())
             val dx = (visual.shadowDistanceDp * density) * cos(angleRad)
             val dy = (visual.shadowDistanceDp * density) * sin(angleRad)
             shadowPaint.color = Color.argb((120 * alpha).toInt(), 0, 0, 0)
             if (visual.shadowSoft) {
-                shadowPaint.setShadowLayer(visual.shadowBlurDp * density * 1.6f, dx.toFloat(), dy.toFloat(), Color.argb((110 * alpha).toInt(), 0, 0, 0))
+                shadowPaint.setShadowLayer(
+                    visual.shadowBlurDp * density * 1.6f,
+                    dx.toFloat(), dy.toFloat(),
+                    Color.argb((110 * alpha).toInt(), 0, 0, 0)
+                )
             } else {
                 shadowPaint.clearShadowLayer()
             }
             shadowPaint.style = Paint.Style.FILL
-            tag_shadowDx = dx.toFloat()
-            tag_shadowDy = dy.toFloat()
+            tagShadowDx = dx.toFloat()
+            tagShadowDy = dy.toFloat()
         }
 
         icon?.setTint(textPaint.color)
-        // Soft (blurred) shadows need a software layer to render.
-        if (visual.shadow && visual.shadowSoft) setLayerType(LAYER_TYPE_SOFTWARE, null)
-        else setLayerType(LAYER_TYPE_NONE, null)
+
+        // soft shadow + glow need a software layer to render
+        if ((visual.shadow && visual.shadowSoft) || visual.glow) {
+            setLayerType(LAYER_TYPE_SOFTWARE, null)
+        } else {
+            setLayerType(LAYER_TYPE_NONE, null)
+        }
         invalidate()
     }
 
-    private var tag_shadowDx = 0f
-    private var tag_shadowDy = 0f
+    private var tagShadowDx = 0f
+    private var tagShadowDy = 0f
 
     fun setPressedState(isPressed: Boolean, scalePercent: Int) {
         pressed = isPressed
-        pressScaleTarget = if (isPressed) scalePercent.coerceIn(80, 100) / 100f else 1f
+        val effectiveScale = visual.pressedScalePercent ?: scalePercent
+        pressScaleTarget = if (isPressed) effectiveScale.coerceIn(70, 100) / 100f else 1f
         if (!isPressed) pressScale = pressScaleTarget
         invalidate()
     }
@@ -222,42 +262,115 @@ class KeyView(
     override fun onDraw(canvas: Canvas) {
         val density = resources.displayMetrics.density
         rect.set(0f, 0f, width.toFloat(), height.toFloat())
+        if (width <= 0 || height <= 0) return
 
         val rad = (visual.cornerRadiusDp?.toFloat() ?: -1f).let {
             if (it < 0) radiusPx else it * density
         }
 
-        // scale animation towards target
+        // press animation easing
         if (pressScale != pressScaleTarget) {
             pressScale += (pressScaleTarget - pressScale) * 0.55f
             if (kotlin.math.abs(pressScale - pressScaleTarget) < 0.004f) pressScale = pressScaleTarget
         }
 
         val saveCount = canvas.save()
-        if (pressScale < 1f) {
-            val cx = width / 2f
-            val cy = height / 2f
-            canvas.scale(pressScale, pressScale, cx, cy)
+        val cx = width / 2f
+        val cy = height / 2f
+
+        // press zoom + per-key scale
+        val keyScale = (visual.scalePercent?.coerceIn(50, 150) ?: 100) / 100f
+        val totalScale = pressScale * keyScale
+        if (totalScale != 1f) canvas.scale(totalScale, totalScale, cx, cy)
+        // per-key rotation
+        visual.rotationDeg?.let { if (it != 0) canvas.rotate(it.toFloat(), cx, cy) }
+
+        // glow (behind everything)
+        if (visual.glow) {
+            val glowColor = visual.glowColor ?: 0xFF0A84FF.toInt()
+            glowPaint.color = Color.argb(70, Color.red(glowColor), Color.green(glowColor), Color.blue(glowColor))
+            glowPaint.setShadowLayer(
+                visual.glowBlurDp * density,
+                0f, 0f, glowColor
+            )
+            canvas.drawRoundRect(rect, rad, rad, glowPaint)
         }
 
-        // shadow layer
+        // drop shadow
         if (visual.shadow) {
             shadowRect.set(rect)
-            shadowRect.offset(tag_shadowDx, tag_shadowDy)
+            shadowRect.offset(tagShadowDx, tagShadowDy)
             val shadowRadius = if (visual.shadowSoft) rad else rad * 0.6f
             canvas.drawRoundRect(shadowRect, shadowRadius, shadowRadius, shadowPaint)
         }
 
-        // key body (active = highlighted shift/caps state)
+        // ---- key body ----
         val opacityAlpha = (visual.opacityPercent?.coerceIn(5, 100) ?: 100) / 100f
-        val bodyColor = if (active) activeBg else keyColor
-        bgPaint.color = bodyColor
-        bgPaint.alpha = (Color.alpha(bodyColor) * opacityAlpha).toInt().coerceIn(0, 255)
+        val bodyColor = when {
+            pressed && visual.pressedColor != null -> visual.pressedColor!!
+            active -> activeBg
+            else -> keyColor
+        }
+
+        if (visual.gradient && visual.gradientColor != null) {
+            val angleRad = Math.toRadians(visual.gradientAngleDeg.toDouble())
+            val half = max(width, height) / 2f
+            val sx = cx - (cos(angleRad) * half).toFloat()
+            val sy = cy - (sin(angleRad) * half).toFloat()
+            val ex = cx + (cos(angleRad) * half).toFloat()
+            val ey = cy + (sin(angleRad) * half).toFloat()
+            bgPaint.shader = LinearGradient(
+                sx, sy, ex, ey,
+                withAlpha(bodyColor, opacityAlpha),
+                withAlpha(visual.gradientColor!!, opacityAlpha),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRoundRect(rect, rad, rad, bgPaint)
+            bgPaint.shader = null
+        } else {
+            bgPaint.color = bodyColor
+            bgPaint.alpha = (Color.alpha(bodyColor) * opacityAlpha).toInt().coerceIn(0, 255)
+            canvas.drawRoundRect(rect, rad, rad, bgPaint)
+        }
         if (active) {
             textPaint.color = activeTextColor
             textPaint.alpha = Color.alpha(activeTextColor)
         }
-        canvas.drawRoundRect(rect, rad, rad, bgPaint)
+
+        // image background (clipped to the rounded key)
+        if (visual.imageId != null) {
+            if (clipImageId != visual.imageId || clipBitmap == null) {
+                clipBitmap = Assets.keyBitmap(
+                    context, visual.imageId,
+                    visual.imageScalePercent, visual.imageBlurDp
+                )
+                clipImageId = visual.imageId
+            }
+            val bmp = clipBitmap
+            if (bmp != null) {
+                val imgSave = canvas.save()
+                clipPath.reset()
+                clipPath.addRoundRect(rect, rad, rad, Path.Direction.CW)
+                canvas.clipPath(clipPath)
+                val zoom = visual.imageScalePercent.coerceIn(50, 300) / 100f
+                val scale = max(width.toFloat() / bmp.width, height.toFloat() / bmp.height) * zoom
+                val dw = bmp.width * scale
+                val dh = bmp.height * scale
+                bmpPaint.alpha = (visual.imageAlphaPercent.coerceIn(0, 100) * 2.55f).toInt()
+                canvas.drawBitmap(bmp, (width - dw) / 2f, (height - dh) / 2f, bmpPaint)
+                bmpPaint.alpha = 255
+                canvas.restoreToCount(imgSave)
+            }
+        }
+
+        // inner shadow
+        if (visual.innerShadow) {
+            innerPaint.color = Color.argb(70, 0, 0, 0)
+            innerPaint.strokeWidth = 1.5f * density
+            val inset = innerPaint.strokeWidth / 2f + 0.5f
+            val ir = RectF(rect).also { it.inset(inset, inset) }
+            canvas.drawRoundRect(ir, (rad - inset).coerceAtLeast(0f), (rad - inset).coerceAtLeast(0f), innerPaint)
+        }
 
         // border (per side)
         val borderColor = visual.borderColor
@@ -270,33 +383,47 @@ class KeyView(
             }
         }
 
-        // icon or label
+        // ---- icon or label ----
         val textPos = visual.textPosition ?: 0
+        val padH = (visual.paddingH ?: 0) * density
+        val padV = (visual.paddingV ?: 0) * density
         if (icon != null) {
             val iconSize = min(width, height) * 0.46f
-            val iconColor = textPaint.color
-            icon?.setTint(iconColor)
+            icon?.setTint(textPaint.color)
             val left = (width - iconSize) / 2f
             val top = when (textPos) {
-                1 -> height * 0.16f
-                2 -> height * 0.52f
+                1 -> height * 0.16f + padV
+                2 -> height * 0.52f + padV
                 else -> (height - iconSize) / 2f
             }
-            icon?.setBounds(left.toInt(), top.toInt(), (left + iconSize).toInt(), (top + iconSize).toInt())
+            icon?.setBounds(
+                (left + padH).toInt(), top.toInt(),
+                (left + iconSize - padH).toInt(), (top + iconSize).toInt()
+            )
             icon?.draw(canvas)
         } else if (key.label.isNotEmpty()) {
             val textY = when (textPos) {
-                1 -> height * 0.34f + textPaint.textSize * 0.3f
-                2 -> height * 0.84f - textPaint.textSize * 0.2f
+                1 -> height * 0.34f + textPaint.textSize * 0.3f + padV
+                2 -> height * 0.84f - textPaint.textSize * 0.2f - padV
                 else -> height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
             }
             val textX = when (textPos) {
-                3 -> 6f * density + (visual.borderWidthDp?.toFloat() ?: 0f) * density
-                4 -> width - 4f * density
+                3 -> 6f * density + padH + (visual.borderWidthDp?.toFloat() ?: 0f) * density
+                4 -> width - 4f * density - padH
                 else -> width / 2f
             }
             if (textPos == 3) textPaint.textAlign = Paint.Align.LEFT
-            canvas.drawText(key.label, textX, textY, textPaint)
+
+            // per-key text rotation
+            val textRot = visual.textRotationDeg ?: 0
+            if (textRot != 0) {
+                canvas.save()
+                canvas.rotate(textRot.toFloat(), width / 2f, height / 2f)
+                canvas.drawText(key.label, textX, textY, textPaint)
+                canvas.restore()
+            } else {
+                canvas.drawText(key.label, textX, textY, textPaint)
+            }
             textPaint.textAlign = Paint.Align.CENTER
         }
 
@@ -317,6 +444,12 @@ class KeyView(
 
         if (pressScale != pressScaleTarget) postInvalidateOnAnimation()
     }
+
+    private fun withAlpha(color: Int, fraction: Float): Int =
+        Color.argb(
+            (Color.alpha(color) * fraction).toInt().coerceIn(0, 255),
+            Color.red(color), Color.green(color), Color.blue(color)
+        )
 
     private val borderPath = Path()
 
@@ -346,12 +479,7 @@ class KeyView(
 
     private var downX = 0f
     private var downY = 0f
-    private var touchDownTime = 0L
     private var longPressFired = false
-
-    fun beginSlide(rawX: Float, rawY: Float) {
-        slideMode = true
-    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -361,12 +489,11 @@ class KeyView(
                 longPressFired = false
                 downX = event.x
                 downY = event.y
-                touchDownTime = System.currentTimeMillis()
                 setPressedState(true, Prefs.pressScalePercent(context))
                 listener?.onKeyTouchDown(this, key)
                 if (key.repeatOnHold) {
                     postDelayed(repeatRunnable, REPEAT_DELAY)
-                } else if (key.type != KeyType.SPACE) {
+                } else {
                     postDelayed(longPressRunnable, LONG_PRESS_MS)
                 }
                 return true
@@ -410,17 +537,5 @@ class KeyView(
 
     private fun cancelRepeat() {
         removeCallbacks(repeatRunnable)
-    }
-
-    private fun performHapticLite() {
-        // The service handles the real haptic; this is only a fallback.
-    }
-
-    fun fireLongPressOnce() {
-        if (!longPressFired) {
-            longPressFired = true
-            slideMode = true
-            listener?.onKeyLongPress(this, key)
-        }
     }
 }
