@@ -74,7 +74,7 @@ class KeyView(
     }
     private val rect = RectF()
 
-    private val longPressRunnable = Runnable {
+    private val longPressRunnable: Runnable = Runnable {
         if (pressed) {
             longPressConsumed = true
             pressed = false
@@ -83,7 +83,7 @@ class KeyView(
         }
     }
 
-    private val repeatKickRunnable = Runnable {
+    private val repeatKickRunnable: Runnable = Runnable {
         if (pressed && repeatable) {
             repeatStarted = true
             listener?.onKeyRepeat(this)
@@ -91,7 +91,7 @@ class KeyView(
         }
     }
 
-    private val repeatTickRunnable = Runnable {
+    private val repeatTickRunnable: Runnable = Runnable {
         if (pressed && repeatable) {
             listener?.onKeyRepeat(this)
             handler.postDelayed(repeatTickRunnable, REPEAT_INTERVAL_MS)

@@ -172,8 +172,8 @@ object Ui {
         p: Palette,
         parent: LinearLayout,
         title: String,
-        min: Int,
-        max: Int,
+        minValue: Int,
+        maxValue: Int,
         value: Int,
         enabled: Boolean,
         format: (Int) -> String,
@@ -201,13 +201,15 @@ object Ui {
         labelRow.addView(valueView)
         parent.addView(labelRow)
 
+        val range = (maxValue - minValue).coerceAtLeast(0)
+
         return SeekBar(context).apply {
-            max = (max - min).coerceAtLeast(0)
-            progress = (value - min).coerceIn(0, (max - min).coerceAtLeast(0))
+            max = range
+            progress = (value - minValue).coerceIn(0, range)
             isEnabled = enabled
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar?, progressValue: Int, fromUser: Boolean) {
-                    val v = progressValue + min
+                    val v = progressValue + minValue
                     valueView.text = format(v)
                     onChange(v)
                 }
