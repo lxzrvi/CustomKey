@@ -11,8 +11,8 @@ android {
         applicationId = "com.customkey.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.4.1"
+        versionCode = 7
+        versionName = "1.4.2"
     }
 
     val releaseKeystore = rootProject.file("release.keystore")

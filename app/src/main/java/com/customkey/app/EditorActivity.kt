@@ -172,14 +172,13 @@ class EditorActivity : Activity(), KeyView.Listener {
             setPadding(dp(10), dp(8), dp(10), dp(4))
         }
 
-        val back = TextView(this).apply {
-            text = "‹"
-            textSize = 22f
-            typeface = Ui.fontMedium(this@EditorActivity)
-            gravity = Gravity.CENTER
-            setTextColor(palette.text)
+        val back = ImageView(this).apply {
+            setImageResource(R.drawable.ic_back)
+            drawable?.setTint(palette.text)
             background = Ui.rounded(this@EditorActivity, palette.tinted, 12)
             contentDescription = "Back"
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             setOnClickListener { onBackPressed() }
         }
         header.addView(
@@ -260,11 +259,13 @@ class EditorActivity : Activity(), KeyView.Listener {
                 FrameLayout.LayoutParams.WRAP_CONTENT
             )
         )
+        // Cap the preview at 38% of the screen height RIGHT AWAY so the tab
+        // area can never be squeezed to zero on the first layout pass.
         parent.addView(
             previewHolder,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+                (resources.displayMetrics.heightPixels * 0.38f).toInt()
             )
         )
     }
@@ -650,6 +651,12 @@ class EditorActivity : Activity(), KeyView.Listener {
             )
         )
         dialog.show()
+    }
+
+    // In the editor the whole spacebar (including the quick chips) opens the
+    // action box — the chips are live in the IME itself.
+    override fun onKeyZoneTap(view: KeyView, key: KeyDef, zone: Int) {
+        onKeyTap(view, key)
     }
 
     override fun onKeyLongPress(view: KeyView, key: KeyDef) {
@@ -2975,18 +2982,25 @@ class EditorActivity : Activity(), KeyView.Listener {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(6), 0, 0)
         }
+
+        fun gap() {
+            actionsRow.addView(
+                View(this),
+                LinearLayout.LayoutParams(dp(6), 1)
+            )
+        }
         Ui.button(this, palette, actionsRow, "Reset", filled = false, matchWidth = false) {
             showResetDialog()
         }
-        actionsRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        gap()
         Ui.button(this, palette, actionsRow, "Cancel", filled = false, matchWidth = false) {
             showCancelDialog()
         }
-        actionsRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        gap()
         Ui.button(this, palette, actionsRow, "Preset", filled = false, matchWidth = false) {
             showPresetPicker()
         }
-        actionsRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        gap()
         Ui.button(this, palette, actionsRow, "Apply", filled = true, matchWidth = false) {
             applyChanges()
         }

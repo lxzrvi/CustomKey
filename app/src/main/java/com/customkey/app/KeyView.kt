@@ -40,6 +40,11 @@ class KeyView(
         fun onKeyTouchUp(view: KeyView, key: KeyDef)
         /** Finger moved with the key pressed — raw screen coordinates. */
         fun onKeySlide(view: KeyView, key: KeyDef, rawX: Float, rawY: Float)
+        /**
+         * Tap on a special zone of a wide spacebar: 1 = left emoji chip,
+         * 2 = right trackpad chip. Default: ignored.
+         */
+        fun onKeyZoneTap(view: KeyView, key: KeyDef, zone: Int) {}
     }
 
     companion object {
@@ -427,6 +432,33 @@ class KeyView(
             textPaint.textAlign = Paint.Align.CENTER
         }
 
+        // Spacebar quick chips: emoji (left) + trackpad (right).
+        if (key.type == KeyType.SPACE && width >= height * 2.2f) {
+            val chipAlpha = textPaint.alpha
+            val iconSize = height * 0.42f
+            val cy = (height - iconSize) / 2f
+            val emojiIcon = context.getDrawable(R.drawable.ic_emoji)?.mutate()
+            val cursorIcon = context.getDrawable(R.drawable.ic_cursor)?.mutate()
+            if (emojiIcon != null && cursorIcon != null) {
+                emojiIcon.setTint(textPaint.color)
+                cursorIcon.setTint(textPaint.color)
+                val cxLeft = height * 0.52f
+                emojiIcon.setBounds(
+                    (cxLeft - iconSize / 2f).toInt(), cy.toInt(),
+                    (cxLeft + iconSize / 2f).toInt(), (cy + iconSize).toInt()
+                )
+                emojiIcon.alpha = chipAlpha
+                emojiIcon.draw(canvas)
+                val cxRight = width - height * 0.52f
+                cursorIcon.setBounds(
+                    (cxRight - iconSize / 2f).toInt(), cy.toInt(),
+                    (cxRight + iconSize / 2f).toInt(), (cy + iconSize).toInt()
+                )
+                cursorIcon.alpha = chipAlpha
+                cursorIcon.draw(canvas)
+            }
+        }
+
         // long-press hint (small char in the top-right corner)
         if (showHint && hintChar.isNotEmpty()) {
             hintPaint.textSize = textPaint.textSize * 0.46f
@@ -481,6 +513,21 @@ class KeyView(
     private var downY = 0f
     private var longPressFired = false
 
+    /**
+     * Quick-access zones on a wide spacebar: 1 = emoji chip (left),
+     * 2 = trackpad chip (right), 0 = normal space behaviour.
+     */
+    private fun spaceZone(x: Float): Int {
+        if (key.type != KeyType.SPACE) return 0
+        if (width < height * 2.2f) return 0
+        val edge = height * 1.15f
+        return when {
+            x < edge -> 1
+            x > width - edge -> 2
+            else -> 0
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -510,10 +557,12 @@ class KeyView(
             }
             MotionEvent.ACTION_UP -> {
                 val wasSlide = slideMode || longPressFired
+                val zone = spaceZone(event.x)
                 cancelPressed()
                 listener?.onKeyTouchUp(this, key)
                 if (!wasSlide) {
-                    listener?.onKeyTap(this, key)
+                    if (zone != 0) listener?.onKeyZoneTap(this, key, zone)
+                    else listener?.onKeyTap(this, key)
                 }
                 return true
             }

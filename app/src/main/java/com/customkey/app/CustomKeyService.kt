@@ -167,13 +167,13 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
      */
     private fun navBarHeuristic(): Int {
         if (Build.VERSION.SDK_INT < 30) return 0
+        if (!::root.isInitialized) return 0
         return try {
             val wm = getSystemService(android.view.WindowManager::class.java) ?: return 0
             val realBounds = wm.maximumWindowMetrics.bounds
-            val decor = window?.window?.decorView ?: return 0
             val loc = IntArray(2)
-            decor.getLocationOnScreen(loc)
-            val decorBottom = loc[1] + decor.height
+            root.getLocationOnScreen(loc)
+            val decorBottom = loc[1] + root.height
             val resId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
             if (resId <= 0) return 0
             val navH = resources.getDimensionPixelSize(resId)
@@ -191,10 +191,10 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
      * navigation_bar_height so a bogus frame can never over-pad.
      */
     private fun navBarFromVisibleFrame(): Int {
+        if (!::root.isInitialized) return 0
         return try {
-            val decor = window?.window?.decorView ?: return 0
             val visible = Rect()
-            decor.getWindowVisibleDisplayFrame(visible)
+            root.getWindowVisibleDisplayFrame(visible)
             val realH = if (Build.VERSION.SDK_INT >= 30) {
                 getSystemService(android.view.WindowManager::class.java)
                     ?.maximumWindowMetrics?.bounds?.height() ?: return 0
@@ -249,6 +249,7 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             }
             reapply()
             decor.post { reapply() }
+            decor.postDelayed({ reapply() }, 350)
         } catch (_: Exception) {
         }
     }
@@ -258,6 +259,10 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     override fun onStartInputView(editorInfo: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(editorInfo, restarting)
+
+        // A brand-new field ends the trackpad; a restart of the SAME field
+        // (cursor/selection updates) must keep it open.
+        if (!restarting) exitTrackpad()
 
         page = Page.LETTERS
         enterLabelNow = computeEnterLabel()
@@ -291,7 +296,8 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
     private fun buildKeyboard() {
         if (!::root.isInitialized) return
         hidePopups()
-        exitTrackpad()
+        // NOTE: the trackpad overlay is independent of the key rows and must
+        // survive rebuilds (page switches, selection toggles, layout edits).
 
         val palette = KeyboardTheme.palette(this)
         applyKeyboardBackground(palette)
@@ -854,6 +860,22 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
+    /** Spacebar quick chips: emoji page (left) and trackpad (right). */
+    override fun onKeyZoneTap(view: KeyView, key: KeyDef, zone: Int) {
+        if (key.type != KeyType.SPACE) return
+        when (zone) {
+            1 -> {
+                feedback(key)
+                page = Page.EMOJI
+                buildKeyboard()
+            }
+            2 -> if (Prefs.trackpadEnabled(this)) {
+                feedback(key)
+                enterTrackpad()
+            }
+        }
+    }
+
     override fun onKeyLongPress(view: KeyView, key: KeyDef) {
         // Space long-press → cursor trackpad.
         if (key.type == KeyType.SPACE && Prefs.trackpadEnabled(this)) {
@@ -1060,6 +1082,30 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
+    /**
+     * Jumps to the very start / end of the text. While a selection is active
+     * it EXTENDS the selection to that edge (selection stays open); otherwise
+     * the caret simply jumps there.
+     */
+    private fun jumpSelectionToEdge(toStart: Boolean) {
+        val ic = currentInputConnection ?: return
+        try {
+            val et = ic.getExtractedText(ExtractedTextRequest(), 0) ?: return
+            val len = et.text?.length ?: 0
+            val start = et.selectionStart
+            val end = et.selectionEnd
+            if (start < 0 || end < 0) return
+            if (trackpadSelecting && start != end) {
+                if (toStart) ic.setSelection(0, maxOf(start, end))
+                else ic.setSelection(minOf(start, end), len)
+            } else {
+                val edge = if (toStart) 0 else len
+                ic.setSelection(edge, edge)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     private fun currentSelection(): ExtractedText? = try {
         currentInputConnection?.getExtractedText(ExtractedTextRequest(), 0)
     } catch (_: Exception) {
@@ -1157,6 +1203,24 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
         sheet.addView(selectionRow)
 
+        // Jump to the very start / end — keeps the selection (and the
+        // trackpad) open, no need to close anything.
+        val jumpRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(6))
+        }
+        listOf(
+            "⇤ Start" to ("Jump to text start" to { jumpSelectionToEdge(toStart = true) }),
+            "End ⇥" to ("Jump to text end" to { jumpSelectionToEdge(toStart = false) })
+        ).forEach { (label, pair) ->
+            jumpRow.addView(
+                cursorChip(label, pair.first, pair.second),
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(6) }
+            )
+        }
+        sheet.addView(jumpRow)
+
         // Select toggle: after this, slides EXTEND the selection.
         val selectChip = TextView(this).apply {
             text = if (trackpadSelecting) "Selecting: ON" else "Select text"
@@ -1208,12 +1272,14 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     private var trackpadDownTime = 0L
     private var trackpadMoved = false
+    private var trackpadTravel = 0f
 
     private fun trackpadTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 trackpadDownTime = System.currentTimeMillis()
                 trackpadMoved = false
+                trackpadTravel = 0f
                 trackpadLastX = event.rawX
                 trackpadLastY = event.rawY
                 return true
@@ -1221,7 +1287,9 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             MotionEvent.ACTION_MOVE -> {
                 val dx = event.rawX - trackpadLastX
                 val dy = event.rawY - trackpadLastY
-                if (kotlin.math.abs(dx) > 2f || kotlin.math.abs(dy) > 2f) trackpadMoved = true
+                // total travelled distance — slow deliberate drags count too
+                trackpadTravel += kotlin.math.abs(dx) + kotlin.math.abs(dy)
+                if (trackpadTravel > dp(6)) trackpadMoved = true
                 trackpadMove(dx, dy)
                 trackpadLastX = event.rawX
                 trackpadLastY = event.rawY
