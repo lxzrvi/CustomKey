@@ -208,7 +208,10 @@ object Ui {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                topMargin = dp(context, 8)
+                bottomMargin = dp(context, 8)
+            }
         )
         return card
     }

@@ -522,7 +522,11 @@ class EditorActivity : Activity(), KeyView.Listener {
         scroll.addView(tabPagesHolder)
         parent.addView(
             scroll,
-            LinearLayout.LayoutParams(0, 0, 1f)
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
         )
     }
 
@@ -588,17 +592,33 @@ class EditorActivity : Activity(), KeyView.Listener {
     private fun showKeyActionBox(key: KeyDef) {
         val dialog = Ui.CustomDialog(this, palette, "“${key.label.take(10)}”")
         val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        dialog.body.addView(grid)
+        dialog.body.addView(
+            grid,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         fun row(titles: List<Pair<String, Boolean>>, actions: List<() -> Unit>) {
             val r = LinearLayout(this)
             titles.forEachIndexed { i, (title, filled) ->
-                Ui.button(this, palette, r, title, filled = filled, matchWidth = false) {
+                val b = Ui.button(this, palette, r, title, filled = filled, matchWidth = false) {
                     dialog.dialog.dismiss()
                     actions[i]()
                 }
+                (b.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                    lp.topMargin = dp(4)
+                    if (i == 0) lp.marginEnd = dp(3) else lp.marginStart = dp(3)
+                }
             }
-            grid.addView(r)
+            grid.addView(
+                r,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
 
         row(

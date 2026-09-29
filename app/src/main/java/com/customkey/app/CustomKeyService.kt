@@ -184,9 +184,44 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
+    /**
+     * Visible-frame fallback: the gap between the window's visible frame and
+     * the real display bottom IS the nav bar — works even on ROMs that report
+     * 0 insets to IME windows. Cross-checked against the system's
+     * navigation_bar_height so a bogus frame can never over-pad.
+     */
+    private fun navBarFromVisibleFrame(): Int {
+        return try {
+            val decor = window?.window?.decorView ?: return 0
+            val visible = Rect()
+            decor.getWindowVisibleDisplayFrame(visible)
+            val realH = if (Build.VERSION.SDK_INT >= 30) {
+                getSystemService(android.view.WindowManager::class.java)
+                    ?.maximumWindowMetrics?.bounds?.height() ?: return 0
+            } else {
+                val size = android.graphics.Point()
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay.getRealSize(size)
+                size.y
+            }
+            val diff = realH - visible.bottom
+            if (diff <= 0) return 0
+            val resId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+            val sysNav = if (resId > 0) resources.getDimensionPixelSize(resId) else 0
+            if (sysNav > 0) {
+                if (diff >= sysNav / 2) sysNav else 0
+            } else {
+                diff.coerceIn(0, dp(48))
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
     private fun applyBottomInset(reported: Int) {
         if (!::root.isInitialized) return
-        val navBottom = if (reported > 0) reported else navBarHeuristic()
+        // belt & braces: best of insets, decor-bounds heuristic, visible frame
+        val navBottom = maxOf(reported, navBarHeuristic(), navBarFromVisibleFrame())
         lastNavBottom = navBottom
         applyContentPadding(navBottom)
     }
@@ -203,11 +238,15 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
 
     override fun onWindowShown() {
         super.onWindowShown()
-        // Fallback for ROMs where the decor listener never fires.
+        // Fallback for ROMs where the decor listener never fires or fires late.
         try {
             val decor = window?.window?.decorView ?: return
-            val insets = decor.rootWindowInsets ?: return
-            applyBottomInset(insetsBottom(insets))
+            fun reapply() {
+                val insets = decor.rootWindowInsets
+                applyBottomInset(if (insets != null) insetsBottom(insets) else 0)
+            }
+            reapply()
+            decor.post { reapply() }
         } catch (_: Exception) {
         }
     }
