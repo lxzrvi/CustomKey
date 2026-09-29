@@ -562,7 +562,7 @@ class KeyView(
     /** Draws text, shrinking it when it would not fit the key width. */
     private fun drawFittingText(canvas: Canvas, text: String, x: Float, y: Float) {
         val density = resources.displayMetrics.density
-        val available = (width - dp(6) - inset * 2f).coerceAtLeast(dp(4))
+        val available = (width - dp(6) - inset * 2f).coerceAtLeast(dp(4).toFloat())
         val measured = textPaint.measureText(text)
         if (measured > available && measured > 0f) {
             val keepSize = textPaint.textSize
