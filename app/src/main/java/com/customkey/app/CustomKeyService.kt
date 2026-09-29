@@ -201,7 +201,9 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
             } else {
                 val size = android.graphics.Point()
                 @Suppress("DEPRECATION")
-                windowManager.defaultDisplay.getRealSize(size)
+                val wm = getSystemService(android.view.WindowManager::class.java) ?: return 0
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.getRealSize(size)
                 size.y
             }
             val diff = realH - visible.bottom
