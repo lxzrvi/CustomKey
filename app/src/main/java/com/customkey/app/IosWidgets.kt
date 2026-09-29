@@ -183,6 +183,8 @@ class IosSlider(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 active = true
+                // sliders must never be stolen by the surrounding scroll view
+                parent?.requestDisallowInterceptTouchEvent(true)
                 updateFromTouch(event.x)
                 return true
             }
@@ -192,6 +194,7 @@ class IosSlider(context: Context) : View(context) {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 active = false
+                parent?.requestDisallowInterceptTouchEvent(false)
                 invalidate()
                 performClick()
                 return true

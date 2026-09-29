@@ -122,7 +122,16 @@ class MainActivity : android.app.Activity() {
         val testCard = Ui.addCard(this, palette, screen)
         testField = Ui.editText(this, palette, "Tap here to type…")
         testField.inputType = InputType.TYPE_CLASS_TEXT
-        testCard.addView(testField)
+        testField.gravity = android.view.Gravity.CENTER
+        testField.minHeight = dp(56)
+        testField.isSingleLine = true
+        testCard.addView(
+            testField,
+            android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         // ---- edit keyboard ----
         val editCard = Ui.addCard(this, palette, screen)
@@ -259,13 +268,14 @@ class MainActivity : android.app.Activity() {
         else @Suppress("DEPRECATION") info.versionCode.toLong()
         "${info.versionName} ($code)"
     } catch (_: Exception) {
-        "1.4.2"
+        "1.4.3"
     }
 
     private fun showVersionDialog() {
         val dialog = Ui.CustomDialog(this, palette, "Version history")
         dialog.body.addView(TextView(this).apply {
             text = """
+                1.4.3 — Always sit above the Android nav bar (system nav-height padding), editor: text tabs, outline selection, preview page switcher (letters/symbols/emoji/trackpad), live toolbar preview, 3-way reset, drag & rearrange fixes, unclipped shadows, auto-fit labels, sliders no longer scroll the page.
                 1.4.2 — Spacebar quick chips (emoji + trackpad), trackpad Start/End jump + stays open while selecting, stronger nav-bar fix, editor bottom bar & back arrow polished.
                 1.4.1 — Fix: keyboard always sits above the Android navigation bar (stronger fallback), editor tab pages now render, cards & action buttons properly spaced.
                 1.4 — Keyboard Editor Pro: 9-tab live editor, multi-select batch edit, gradients, images, fonts, glow & inner shadow, text effects, custom key sounds, per-key vibration, optional toolbar, emoji grid controls.

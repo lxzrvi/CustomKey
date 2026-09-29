@@ -220,10 +220,25 @@ class CustomKeyService : InputMethodService(), KeyView.Listener {
         }
     }
 
+    /**
+     * The system's own navigation_bar_height. We lay the IME window out
+     * edge-to-edge ourselves, so this is ALWAYS a safe minimum — even on ROMs
+     * that report zero insets and bogus visible frames to IME windows.
+     */
+    private fun navBarResourceHeight(): Int = try {
+        val resId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        if (resId > 0) resources.getDimensionPixelSize(resId).coerceIn(0, dp(60)) else 0
+    } catch (_: Exception) {
+        0
+    }
+
     private fun applyBottomInset(reported: Int) {
         if (!::root.isInitialized) return
-        // belt & braces: best of insets, decor-bounds heuristic, visible frame
-        val navBottom = maxOf(reported, navBarHeuristic(), navBarFromVisibleFrame())
+        // belt & braces: best of insets, decor heuristic, visible frame AND
+        // the system's declared navigation bar height
+        val navBottom = maxOf(
+            reported, navBarHeuristic(), navBarFromVisibleFrame(), navBarResourceHeight()
+        )
         lastNavBottom = navBottom
         applyContentPadding(navBottom)
     }

@@ -72,6 +72,9 @@ class EditorActivity : Activity(), KeyView.Listener {
     private lateinit var preview: LinearLayout
     private var previewKeyViews = ArrayList<KeyView>()
 
+    // What the preview area shows (switchable via the ⋯ menu)
+    private var previewMode = "letters"
+
     // Tabs
     private val tabNames = listOf(
         "Key", "Selected", "All Keys", "Keyboard", "Emoji",
@@ -83,7 +86,6 @@ class EditorActivity : Activity(), KeyView.Listener {
     private var currentTab = "Key"
 
     // Bottom bar
-    private lateinit var presetsRow: LinearLayout
 
     // Sound preview
     private var sounds: KeySounds? = null
@@ -199,14 +201,13 @@ class EditorActivity : Activity(), KeyView.Listener {
                 .apply { marginStart = dp(10); marginEnd = dp(10) }
         )
 
-        val more = TextView(this).apply {
-            text = "⋯"
-            textSize = 20f
-            typeface = Ui.fontMedium(this@EditorActivity)
-            gravity = Gravity.CENTER
-            setTextColor(palette.text)
+        val more = ImageView(this).apply {
+            setImageResource(R.drawable.ic_more)
+            drawable?.setTint(palette.text)
             background = Ui.rounded(this@EditorActivity, palette.tinted, 12)
             contentDescription = "More options"
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(9), dp(9), dp(9), dp(9))
             setOnClickListener { showMoreOptions() }
         }
         header.addView(
@@ -231,6 +232,9 @@ class EditorActivity : Activity(), KeyView.Listener {
                 dialog.dialog.dismiss()
                 action()
             }
+        }
+        option("Preview shows: ${previewModeLabel()}") {
+            showPreviewModePicker()
         }
         option("Reset all key formatting") { confirmResetAllStyles() }
         option("Clear trash", danger = true) {
@@ -290,7 +294,7 @@ class EditorActivity : Activity(), KeyView.Listener {
             else previewHolder.setBackgroundColor(theme.bg)
         }
 
-        def.rows.forEach { rowDef ->
+        fun addKeyRow(rowDef: RowDef) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = when (Prefs.rowAlignment(this@EditorActivity)) {
@@ -307,13 +311,14 @@ class EditorActivity : Activity(), KeyView.Listener {
                 val isActiveEdit = !selectMode && key.id == activeKey?.id
                 val isSelected = selectMode && selectedIds.contains(key.id)
                 view.setColors(
-                    bg = if (isActiveEdit || isSelected) 0xFF0A84FF.toInt() else theme.withAlpha(keyBg),
-                    label = if (isActiveEdit || isSelected) 0xFFFFFFFF.toInt() else style.textColor,
+                    bg = theme.withAlpha(keyBg),
+                    label = style.textColor,
                     sizeSp = style.textPx,
                     radiusPx = style.radiusPx,
                     hintColor = theme.withAlpha(style.textColor)
                 )
-                if (isActiveEdit || isSelected) view.active = true
+                // outline keeps the user's own formatting fully visible
+                if (isActiveEdit || isSelected) view.outline = true
                 view.setHintText(
                     if (Prefs.showLongPressHints(this))
                         key.alternates.take(1).ifEmpty { builtInHint(key) } else ""
@@ -342,6 +347,20 @@ class EditorActivity : Activity(), KeyView.Listener {
                 rowLp.width = (resources.displayMetrics.widthPixels * widthPct / 100f).toInt()
             }
             preview.addView(row, rowLp)
+        }
+
+        when (previewMode) {
+            "symbols" -> buildSymbolsPreview { addKeyRow(it) }
+            "emoji" -> buildEmojiPreview()
+            "trackpad" -> buildTrackpadPreview()
+            else -> {
+                // optional toolbar strip on top (live, like in the IME)
+                if (Prefs.toolbarEnabled(this)) preview.addView(buildToolbarPreview())
+                if (Prefs.numberRowEnabled(this)) {
+                    addKeyRow(RowDef("1234567890".map { KeyDef(KeyType.CUSTOM, it.toString(), it.toString()) }.toMutableList()))
+                }
+                def.rows.forEach { rowDef -> addKeyRow(rowDef) }
+            }
         }
 
         // Scale down very tall previews so tabs stay reachable.
@@ -483,7 +502,8 @@ class EditorActivity : Activity(), KeyView.Listener {
     private fun buildTabsRow(parent: LinearLayout) {
         val scroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            setPadding(dp(10), dp(4), dp(10), dp(2))
+            // equal breathing room towards the preview and the section below
+            setPadding(dp(14), dp(7), dp(14), dp(7))
         }
         tabsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         scroll.addView(tabsRow)
@@ -491,18 +511,17 @@ class EditorActivity : Activity(), KeyView.Listener {
             tabsRow.addView(
                 TextView(this).apply {
                     text = name
-                    textSize = 13f
+                    textSize = 14f
                     typeface = Ui.fontMedium(this@EditorActivity)
                     gravity = Gravity.CENTER
-                    setPadding(dp(14), dp(8), dp(14), dp(8))
-                    setTextColor(palette.text)
-                    background = Ui.rounded(this@EditorActivity, palette.tinted, 14)
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                    setTextColor(palette.secondary)
                     setOnClickListener { switchTab(name) }
                 },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginEnd = dp(6) }
+                ).apply { marginEnd = dp(10) }
             )
         }
         parent.addView(
@@ -518,7 +537,7 @@ class EditorActivity : Activity(), KeyView.Listener {
         val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
         tabPagesHolder = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(6))
+            setPadding(dp(10), dp(7), dp(10), dp(7))
         }
         scroll.addView(tabPagesHolder)
         parent.addView(
@@ -533,6 +552,14 @@ class EditorActivity : Activity(), KeyView.Listener {
 
     private fun switchTab(name: String) {
         currentTab = name
+        // preview follows the tab that customizes it
+        when (name) {
+            "Emoji" -> if (previewMode != "emoji") { previewMode = "emoji"; rebuildPreview() }
+            "Toolbar", "Key", "Selected", "All Keys", "Layout" ->
+                if (previewMode == "emoji" || previewMode == "trackpad") {
+                    previewMode = "letters"; rebuildPreview()
+                }
+        }
         tabPagesHolder.removeAllViews()
         val page = tabPages[name] ?: buildPage(name).also { tabPages[name] = it }
         tabPagesHolder.addView(
@@ -542,15 +569,12 @@ class EditorActivity : Activity(), KeyView.Listener {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         )
-        // restyle tab chips
+        // restyle tab labels: selected = accent, others = secondary (text only)
         for (i in 0 until tabsRow.childCount) {
             val chip = tabsRow.getChildAt(i) as TextView
             val on = chip.text.toString() == name
-            chip.background = Ui.rounded(
-                this,
-                if (on) palette.accent else palette.tinted, 14
-            )
-            chip.setTextColor(if (on) palette.accentText else palette.text)
+            chip.typeface = if (on) Ui.fontSemibold(this) else Ui.fontMedium(this)
+            chip.setTextColor(if (on) palette.accent else palette.secondary)
         }
     }
 
@@ -660,7 +684,9 @@ class EditorActivity : Activity(), KeyView.Listener {
     }
 
     override fun onKeyLongPress(view: KeyView, key: KeyDef) {
-        if (selectMode) return
+        // In select mode, a selected key can still be long-press-dragged
+        // (moves the whole selection as a group).
+        if (selectMode && !selectedIds.contains(key.id)) return
         startDrag(view, key)
     }
 
@@ -755,6 +781,186 @@ class EditorActivity : Activity(), KeyView.Listener {
         }
         markDirty()
         rebuildPreview()
+    }
+
+    // ------------------------------------------------------------------
+    // PREVIEW MODES (⋯ menu → "Preview shows")
+    // ------------------------------------------------------------------
+
+    private fun buildSymbolsPreview(addRow: (RowDef) -> Unit) {
+        fun rowOf(chars: String, weight: Float = 1f) =
+            RowDef(chars.map { KeyDef(KeyType.CUSTOM, it.toString(), it.toString(), weight) }.toMutableList())
+        addRow(rowOf("1234567890"))
+        addRow(rowOf("@#₹_%&-+()"))
+        addRow(
+            RowDef(
+                mutableListOf(
+                    KeyDef(KeyType.CUSTOM, "*", "*"),
+                    KeyDef(KeyType.CUSTOM, "\"", "\""),
+                    KeyDef(KeyType.CUSTOM, "'", "'"),
+                    KeyDef(KeyType.CUSTOM, ":", ":"),
+                    KeyDef(KeyType.CUSTOM, ";", ";"),
+                    KeyDef(KeyType.CUSTOM, "!", "!"),
+                    KeyDef(KeyType.CUSTOM, "?", "?"),
+                    KeyDef(KeyType.CUSTOM, "/", "/"),
+                    KeyDef(KeyType.DELETE, "⌫", "", 1.4f, repeatOnHold = true)
+                )
+            )
+        )
+        addRow(
+            RowDef(
+                mutableListOf(
+                    KeyDef(KeyType.TO_LETTERS, "ABC", "", 1.4f),
+                    KeyDef(KeyType.CUSTOM, ",", ","),
+                    KeyDef(KeyType.SPACE, "CustomKey", "", 3.4f),
+                    KeyDef(KeyType.CUSTOM, ".", "."),
+                    KeyDef(KeyType.ENTER, "↵", "", 1.2f)
+                )
+            )
+        )
+    }
+
+    private fun buildEmojiPreview() {
+        val sizeSp = Prefs.emojiSizeSp(this).coerceIn(12, 40).toFloat()
+        val columns = Prefs.emojiColumns(this).coerceIn(4, 12)
+        val rowH = dp(Prefs.emojiRowHeightDp(this).coerceIn(30, 64))
+        val spacing = dp(Prefs.emojiSpacingDp(this).coerceIn(0, 12))
+        val cats = listOf(
+            Prefs.recentEmojis(this).ifEmpty { listOf("😀", "😁", "😂", "🤣", "😃", "😄") },
+            listOf("😄", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😋"),
+            listOf("👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "👏", "🙌", "🤝", "💪", "🙏"),
+            listOf("❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💔", "❣️", "💕", "💞")
+        )
+        cats.forEach { cat ->
+            val rows = (cat.size + columns - 1) / columns
+            for (r in 0 until rows) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                for (c in 0 until columns) {
+                    val idx = r * columns + c
+                    row.addView(
+                        TextView(this).apply {
+                            text = if (idx < cat.size) cat[idx] else ""
+                            textSize = sizeSp
+                            gravity = Gravity.CENTER
+                        },
+                        LinearLayout.LayoutParams(0, rowH, 1f).apply {
+                            setMargins(spacing, spacing / 2, spacing, spacing / 2)
+                        }
+                    )
+                }
+                preview.addView(
+                    row,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+        }
+    }
+
+    private fun buildTrackpadPreview() {
+        val holder = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(palette.card)
+        }
+        val icon = ImageView(this).apply {
+            setImageResource(R.drawable.ic_cursor)
+            drawable?.setTint(palette.text)
+        }
+        holder.addView(icon, LinearLayout.LayoutParams(dp(30), dp(30)).apply { bottomMargin = dp(6) })
+        holder.addView(TextView(this).apply {
+            text = "Trackpad"
+            textSize = 15f
+            typeface = Ui.fontSemibold(this@EditorActivity)
+            gravity = Gravity.CENTER
+            setTextColor(palette.text)
+        })
+        holder.addView(TextView(this).apply {
+            text = "Hold space (or tap the ⌨ chip) to open this —\nslide to move the cursor, tap to exit"
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(palette.secondary)
+            setPadding(0, dp(4), 0, dp(8))
+        })
+        fun chipRow(labels: List<String>) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+            labels.forEach { label ->
+                row.addView(
+                    TextView(this).apply {
+                        text = label
+                        textSize = 14f
+                        typeface = Ui.fontMedium(this@EditorActivity)
+                        gravity = Gravity.CENTER
+                        setTextColor(palette.text)
+                        background = Ui.rounded(this@EditorActivity, palette.tinted, 10)
+                    },
+                    LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                        marginEnd = dp(6); topMargin = dp(3); bottomMargin = dp(3)
+                    }
+                )
+            }
+            holder.addView(row)
+        }
+        chipRow(listOf("◀", "▲", "▼", "▶"))
+        chipRow(listOf("⇤", "⇥", "◧", "◨"))
+        chipRow(listOf("⇤ Start", "End ⇥"))
+        preview.addView(
+            holder,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8); bottomMargin = dp(8) }
+        )
+    }
+
+    /** Mini toolbar strip mirroring the IME toolbar (live-customizable). */
+    private fun buildToolbarPreview(): View {
+        val height = dp(Prefs.toolbarHeightDp(this).coerceIn(24, 64))
+        val iconColor = Prefs.toolbarIconColor(this)
+        val sizeSp = Prefs.toolbarIconSizeSp(this).coerceIn(9, 22).toFloat()
+        val glyphs = mapOf(
+            "cl" to "◀", "cr" to "▶", "cu" to "▲", "cd" to "▼",
+            "copy" to "⧉", "cut" to "✂", "paste" to "📋", "all" to "☰",
+            "emoji" to "☺", "next" to "⏭", "hide" to "⌄"
+        )
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val bg = Prefs.toolbarBgColor(this@EditorActivity)
+            if (bg != 0) setBackgroundColor(bg)
+        }
+        Prefs.toolbarButtons(this).filter { it.on }.forEach { btn ->
+            row.addView(
+                TextView(this).apply {
+                    text = glyphs[btn.id] ?: "•"
+                    textSize = sizeSp
+                    typeface = Ui.fontMedium(this@EditorActivity)
+                    setTextColor(if (iconColor != 0) iconColor else palette.text)
+                    gravity = Gravity.CENTER
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, height
+                ).apply { setMargins(dp(10), 0, dp(10), 0) }
+            )
+        }
+        if (row.childCount == 0) {
+            row.addView(TextView(this).apply {
+                text = "No toolbar buttons enabled — customize in the Toolbar tab"
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTextColor(palette.secondary)
+            })
+        }
+        return row
     }
 
     private fun findKeyById(id: Long): KeyDef? {
@@ -895,30 +1101,39 @@ class EditorActivity : Activity(), KeyView.Listener {
             def.rows.flatMap { r -> r.keys.filter { selectedIds.contains(it.id) } }
         } else listOf(key)
 
-        val (srcRow, srcIdx) = positionOf(key) ?: return
+        // Capture everything BEFORE any removal — positions go stale otherwise.
         val target = findKeyViewAt(rawX, rawY)
+        val targetKey = target?.key()
+        val targetInGroup = targetKey != null && groupKeys.any { it.id == targetKey!!.id }
+        val targetPos = if (targetKey != null && !targetInGroup) positionOf(targetKey!!) else null
+        val originalSpots = groupKeys.mapNotNull { gk ->
+            positionOf(gk)?.let { pos -> gk to pos }
+        }
 
         groupKeys.forEach { gk ->
             val pos = positionOf(gk) ?: return@forEach
             def.rows[pos.first].keys.removeAt(pos.second)
         }
 
-        if (target != null) {
-            val targetKey = target.key()
-            val targetPos = positionOf(targetKey)
-            if (targetPos != null) {
-                var insertAt = targetPos.second
-                val targetLoc = IntArray(2)
-                target.getLocationOnScreen(targetLoc)
-                if (rawX > targetLoc[0] + target.width / 2f) insertAt += 1
-                val dstRow = def.rows[targetPos.first]
-                groupKeys.asReversed().forEach { gk ->
-                    dstRow.keys.add(insertAt.coerceIn(0, dstRow.keys.size), gk)
-                }
-            } else {
-                def.rows.last().keys.addAll(groupKeys)
+        if (targetPos != null && target != null) {
+            var insertAt = targetPos.second
+            val targetLoc = IntArray(2)
+            target.getLocationOnScreen(targetLoc)
+            if (rawX > targetLoc[0] + target.width / 2f) insertAt += 1
+            val dstRow = def.rows[targetPos.first]
+            // insert reversed at the same index → group keeps its order
+            groupKeys.asReversed().forEach { gk ->
+                dstRow.keys.add(insertAt.coerceIn(0, dstRow.keys.size), gk)
+            }
+        } else if (targetInGroup) {
+            // dropped back onto the group itself: restore the original spots
+            originalSpots.asReversed().forEach { (gk, pos) ->
+                def.rows[pos.first].keys.add(
+                    pos.second.coerceIn(0, def.rows[pos.first].keys.size), gk
+                )
             }
         } else {
+            // no key under the finger: keep it simple, append to the last row
             def.rows.last().keys.addAll(groupKeys)
         }
         if (groupKeys.isNotEmpty()) markDirty()
@@ -1184,13 +1399,17 @@ class EditorActivity : Activity(), KeyView.Listener {
 
         if (key == null) {
             page.addView(TextView(this).apply {
-                text = "Tap any key from preview to start editing."
+                text = "Tap any key from the preview above\nto start editing it"
                 textSize = 15f
                 typeface = Ui.font(this@EditorActivity)
                 gravity = Gravity.CENTER
                 setTextColor(palette.secondary)
-                setPadding(dp(8), dp(24), dp(8), dp(24))
-            })
+                setPadding(dp(16), dp(56), dp(16), dp(24))
+            },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
             return page
         }
 
@@ -2965,28 +3184,17 @@ class EditorActivity : Activity(), KeyView.Listener {
             setPadding(dp(10), dp(6), dp(10), dp(8))
         }
 
-        // presets row (existing feature, kept visible)
-        val presetsScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
-        presetsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        presetsScroll.addView(presetsRow)
-        bar.addView(
-            presetsScroll,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-        rebuildPresetsRow()
-
+        // Four equal-width actions with even gaps. Presets are reachable via
+        // the Preset button (asked-for layout: no preset strip up here).
         val actionsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(8), 0, dp(2))
         }
 
         fun gap() {
             actionsRow.addView(
                 View(this),
-                LinearLayout.LayoutParams(dp(6), 1)
+                LinearLayout.LayoutParams(dp(8), 1)
             )
         }
         Ui.button(this, palette, actionsRow, "Reset", filled = false, matchWidth = false) {
@@ -3024,20 +3232,105 @@ class EditorActivity : Activity(), KeyView.Listener {
     private fun showResetDialog() {
         val dialog = Ui.CustomDialog(this, palette, "Reset")
         dialog.body.addView(TextView(this).apply {
-            text = "What should be restored?"
+            text = "What should be reset?"
             textSize = 14f
             typeface = Ui.font(this@EditorActivity)
             setTextColor(palette.secondary)
             setPadding(0, 0, 0, dp(8))
         })
-        Ui.button(this, palette, dialog.body, "Reset layout (QWERTY)") {
-            dialog.dialog.dismiss()
-            confirmResetLayout()
-        }
-        Ui.button(this, palette, dialog.body, "Reset all key formatting", filled = false) {
+        Ui.button(this, palette, dialog.body, "Formatting only") {
             dialog.dialog.dismiss()
             confirmResetAllStyles()
         }
+        Ui.button(this, palette, dialog.body, "Layout (keys & positions)", filled = false) {
+            dialog.dialog.dismiss()
+            confirmResetLayout()
+        }
+        Ui.button(this, palette, dialog.body, "Everything — fresh keyboard", filled = false) {
+            dialog.dialog.dismiss()
+            confirmResetEverything()
+        }
+    }
+
+    /** Full factory reset: default layout AND default look. */
+    private fun previewModeLabel(): String = when (previewMode) {
+        "symbols" -> "Numbers & symbols"
+        "emoji" -> "Emoji"
+        "trackpad" -> "Trackpad"
+        else -> "Letters"
+    }
+
+    private fun showPreviewModePicker() {
+        val dialog = Ui.CustomDialog(this, palette, "Preview shows")
+        dialog.body.addView(TextView(this).apply {
+            text = "The preview above switches to the chosen page — customize it with the tabs."
+            textSize = 13f
+            typeface = Ui.font(this@EditorActivity)
+            setTextColor(palette.secondary)
+            setPadding(0, 0, 0, dp(6))
+        })
+        listOf(
+            "Letters" to "letters",
+            "Numbers & symbols" to "symbols",
+            "Emoji" to "emoji",
+            "Trackpad" to "trackpad"
+        ).forEach { (name, mode) ->
+            val on = previewMode == mode
+            Ui.button(this, palette, dialog.body, if (on) "$name ✓" else name, filled = on) {
+                dialog.dialog.dismiss()
+                previewMode = mode
+                rebuildPreview()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun confirmResetEverything() {
+        val dialog = Ui.CustomDialog(this, palette, "Reset everything?")
+        dialog.body.addView(TextView(this).apply {
+            text = "Layout, positions and every style go back to a brand-new keyboard."
+            textSize = 14f
+            typeface = Ui.font(this@EditorActivity)
+            setTextColor(palette.secondary)
+            setPadding(0, 0, 0, dp(8))
+        })
+        val row = LinearLayout(this)
+        Ui.button(this, palette, row, "Reset", filled = true, matchWidth = false) {
+            dialog.dialog.dismiss()
+            def = Layouts.defaultLetters()
+            var next = 1L
+            def.rows.forEach { rowDef ->
+                val withIds = rowDef.keys.map {
+                    if (it.id == 0L) it.copy(id = System.nanoTime() + (next++)) else it
+                }
+                rowDef.keys.clear()
+                rowDef.keys.addAll(withIds)
+            }
+            def.rows.forEach { rowDef ->
+                rowDef.keys.forEachIndexed { i, k ->
+                    rowDef.keys[i] = k.copy(style = null, color = null)
+                }
+            }
+            activeKey = null
+            selectedIds.clear()
+            selectMode = false
+            updateBatchBar()
+            markDirty()
+            rebuildPreview()
+            refreshTab(currentTab)
+            Toast.makeText(this, "Fresh keyboard — tap Apply to keep", Toast.LENGTH_SHORT).show()
+        }
+        Ui.button(this, palette, row, "Cancel", filled = false, matchWidth = false) {
+            dialog.dialog.dismiss()
+        }
+        dialog.body.addView(
+            row,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        dialog.show()
     }
 
     private fun confirmResetLayout() {
@@ -3141,48 +3434,7 @@ class EditorActivity : Activity(), KeyView.Listener {
     // ---------------- presets ----------------
 
     private fun rebuildPresetsRow() {
-        presetsRow.removeAllViews()
-        val presets = Prefs.presets(this)
-
-        val addChip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            background = Ui.rounded(this@EditorActivity, palette.accent, 14)
-            setOnClickListener { showNewPresetDialog() }
-            val img = ImageView(this@EditorActivity).apply {
-                setImageResource(R.drawable.ic_add)
-                drawable?.setTint(palette.accentText)
-            }
-            addView(img, LinearLayout.LayoutParams(dp(15), dp(15)))
-        }
-        presetsRow.addView(
-            addChip,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginEnd = dp(8) }
-        )
-
-        presets.forEach { preset ->
-            presetsRow.addView(
-                Ui.compactButton(this, palette, preset.name) { showPresetActions(preset) },
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginEnd = dp(6) }
-            )
-        }
-
-        if (presets.isEmpty()) {
-            presetsRow.addView(TextView(this).apply {
-                text = "No presets yet — tap + to save your current keyboard"
-                textSize = 12f
-                typeface = Ui.font(this@EditorActivity)
-                setTextColor(palette.secondary)
-                setPadding(0, dp(9), 0, dp(9))
-            })
-        }
+        // Presets are shown via the Preset button picker — nothing to rebuild.
     }
 
     private fun showPresetPicker() {

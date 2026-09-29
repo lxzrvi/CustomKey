@@ -75,6 +75,13 @@ class KeyView(
     var active = false
     var activeBg = 0xFF0A84FF.toInt()
     var activeTextColor = Color.WHITE
+    /**
+     * Selection/edit outline used by the editor: draws a crisp accent stroke
+     * AROUND the key instead of recolouring it, so the user's own formatting
+     * stays fully visible.
+     */
+    var outline = false
+    var outlineColor = 0xFF0A84FF.toInt()
 
     private var visual: KeyVisual = key.style ?: KeyVisual()
 
@@ -244,6 +251,13 @@ class KeyView(
 
     private var tagShadowDx = 0f
     private var tagShadowDy = 0f
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    private val outlineRect = RectF()
+    /** Key-body inset caused by shadows/glow (computed during draw). */
+    private var inset = 0f
 
     fun setPressedState(isPressed: Boolean, scalePercent: Int) {
         pressed = isPressed
@@ -266,12 +280,33 @@ class KeyView(
 
     override fun onDraw(canvas: Canvas) {
         val density = resources.displayMetrics.density
-        rect.set(0f, 0f, width.toFloat(), height.toFloat())
         if (width <= 0 || height <= 0) return
+        rect.set(inset, inset, width - inset, height - inset)
 
         val rad = (visual.cornerRadiusDp?.toFloat() ?: -1f).let {
             if (it < 0) radiusPx else it * density
         }
+
+        // Reserve room INSIDE the view so shadows / glow are never clipped:
+        // the key body is shrunk by the maximum shadow extent.
+        inset = 0f
+        if (visual.shadow) {
+            inset = maxOf(
+                inset,
+                visual.shadowDistanceDp * density + visual.shadowBlurDp * density * 1.6f
+            )
+        }
+        if (visual.glow) inset = maxOf(inset, visual.glowBlurDp * density)
+        if (visual.textShadow) {
+            inset = maxOf(
+                inset,
+                maxOf(
+                    kotlin.math.abs(visual.textShadowDx * density),
+                    kotlin.math.abs(visual.textShadowDy * density)
+                ) + visual.textShadowBlurDp * density
+            )
+        }
+        inset = inset.coerceIn(0f, minOf(width, height) * 0.32f)
 
         // press animation easing
         if (pressScale != pressScaleTarget) {
@@ -424,10 +459,10 @@ class KeyView(
             if (textRot != 0) {
                 canvas.save()
                 canvas.rotate(textRot.toFloat(), width / 2f, height / 2f)
-                canvas.drawText(key.label, textX, textY, textPaint)
+                drawFittingText(canvas, key.label, textX, textY)
                 canvas.restore()
             } else {
-                canvas.drawText(key.label, textX, textY, textPaint)
+                drawFittingText(canvas, key.label, textX, textY)
             }
             textPaint.textAlign = Paint.Align.CENTER
         }
@@ -474,6 +509,20 @@ class KeyView(
 
         canvas.restoreToCount(saveCount)
 
+        // editor selection outline — on top of everything, never rotated
+        if (outline) {
+            val density = resources.displayMetrics.density
+            val strokeInset = 2f * density
+            val radOut = (visual.cornerRadiusDp?.toFloat()?.times(density) ?: radiusPx) + 2f * density
+            outlinePaint.strokeWidth = 2.5f * density
+            outlinePaint.color = outlineColor
+            outlineRect.set(
+                strokeInset, strokeInset,
+                width - strokeInset, height - strokeInset
+            )
+            canvas.drawRoundRect(outlineRect, radOut, radOut, outlinePaint)
+        }
+
         if (pressScale != pressScaleTarget) postInvalidateOnAnimation()
     }
 
@@ -505,6 +554,24 @@ class KeyView(
             borderPath.lineTo(inset, height.toFloat())
         }
         canvas.drawPath(borderPath, borderPaint)
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
+
+    /** Draws text, shrinking it when it would not fit the key width. */
+    private fun drawFittingText(canvas: Canvas, text: String, x: Float, y: Float) {
+        val density = resources.displayMetrics.density
+        val available = (width - dp(6) - inset * 2f).coerceAtLeast(dp(4))
+        val measured = textPaint.measureText(text)
+        if (measured > available && measured > 0f) {
+            val keepSize = textPaint.textSize
+            textPaint.textSize = keepSize * (available / measured)
+            canvas.drawText(text, x, y, textPaint)
+            textPaint.textSize = keepSize
+        } else {
+            canvas.drawText(text, x, y, textPaint)
+        }
     }
 
     // ---------------- touch ----------------
@@ -548,11 +615,14 @@ class KeyView(
             MotionEvent.ACTION_MOVE -> {
                 if (slideMode || longPressFired) {
                     listener?.onKeySlide(this, key, event.rawX, event.rawY)
-                } else if (kotlin.math.abs(event.x - downX) > width * 0.55f ||
-                    kotlin.math.abs(event.y - downY) > height * 0.8f
-                ) {
-                    // finger slid off — cancel
-                    cancelPressed()
+                } else {
+                    // finger slid clearly outside the key — cancel
+                    val slop = dp(14)
+                    if (event.x < -slop || event.x > width + slop ||
+                        event.y < -slop || event.y > height + slop
+                    ) {
+                        cancelPressed()
+                    }
                 }
             }
             MotionEvent.ACTION_UP -> {
